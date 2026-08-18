@@ -1,0 +1,64 @@
+name: Deploy Supabase Edge Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      # Nao cancela os outros se um falhar: cada function e independente, e
+      # abortar tudo por causa de uma deixaria o conjunto meio publicado.
+      fail-fast: false
+      matrix:
+        function:
+          - carbon-ss-login
+          - carbon-ss-listar
+          - carbon-ss-arvore
+          - carbon-ss-baixar
+          - carbon-ss-enviar
+          - carbon-ss-senha
+    steps:
+      - uses: actions/checkout@v4
+
+      # Falha cedo e com mensagem util, em vez do 401 cru da Management API.
+      - name: Verifica os secrets do deploy
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          faltou=0
+          if [ -z "$TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN nao configurado."
+            echo "Gere em https://supabase.com/dashboard/account/tokens e adicione em Settings > Secrets and variables > Actions."
+            faltou=1
+          fi
+          if [ -z "$PROJECT_REF" ]; then
+            echo "::error::SUPABASE_PROJECT_REF nao configurado (o ref do projeto Supabase do Apsis Carbon)."
+            faltou=1
+          fi
+          exit $faltou
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # --no-verify-jwt: quem autoriza NAO e o JWT do Supabase, e sim o nosso
+      # token de sessao assinado com SESSION_SECRET, conferido dentro de cada
+      # funcao. O cliente externo nao tem conta no Supabase Auth, entao a
+      # verificacao nativa recusaria toda requisicao legitima.
+      #
+      # O project ref vem de secret e nao fica escrito aqui: ele identifica o
+      # projeto Supabase da APSIS num repositorio que pode ser lido por mais
+      # gente do que quem opera o banco.
+      - name: Publica ${{ matrix.function }}
+        run: supabase functions deploy ${{ matrix.function }} --project-ref "$PROJECT_REF" --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}

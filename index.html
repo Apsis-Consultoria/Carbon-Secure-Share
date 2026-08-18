@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  lang="pt-BR" + translate="no" + <meta name="google" content="notranslate"> sao
+  OBRIGATORIOS, nao cosmeticos.
+
+  Com lang="en" (ou sem lang) em conteudo escrito em portugues, o Chrome de quem
+  tem "sempre traduzir ingles" ativado dispara o Google Tradutor. O Tradutor
+  envolve os textos em <font> POR FORA do React; na proxima reconciliacao o React
+  chama removeChild/insertBefore em nos que ja nao sao filhos de quem ele acha
+  que sao, e a tela cai com NotFoundError, alem de exibir textos fatiados. Foi um
+  bug real em producao no Portal Apsis.
+
+  Aqui o risco e MAIOR do que nos portais internos: quem abre esta tela e um
+  cliente, em maquina que a APSIS nao administra, com as extensoes e as
+  preferencias de traducao que ele tiver.
+-->
+<html lang="pt-BR" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="google" content="notranslate" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Secure Share Carbon - área segura para troca de documentos entre a APSIS Consultoria e os clientes dos projetos de carbono."
+    />
+    <meta name="theme-color" content="#1A4731" />
+    <!--
+      noindex: esta é a porta de entrada de documentos de cliente sob acordo de
+      confidencialidade. A tela de login não tem nada de secreto, mas também não
+      há razão nenhuma para ela aparecer em busca.
+    -->
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- Assets self-hostados em /public: nada de URL do Storage de outro projeto. -->
+    <link rel="icon" type="image/png" href="/login/logo-apsis-carbon.png" />
+    <link rel="apple-touch-icon" href="/login/logo-apsis-carbon.png" />
+    <title>Secure Share | APSIS Carbon</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      Este sistema precisa de JavaScript habilitado. Ative o JavaScript no
+      navegador e recarregue a página.
+    </noscript>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

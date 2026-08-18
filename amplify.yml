@@ -1,0 +1,29 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+    build:
+      commands:
+        # As duas variaveis publicas do frontend. Vem das variaveis de ambiente
+        # do app no Amplify, e NAO do repositorio. Nenhum secret entra aqui:
+        # tudo que comeca com VITE_ vai para o bundle e e legivel por qualquer
+        # pessoa que abrir o DevTools.
+        - export VITE_SUPABASE_URL=$SUPABASE_URL
+        - export VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+        - npm run build
+  artifacts:
+    baseDirectory: dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+
+# SPA: qualquer caminho serve o index.html e o React Router resolve.
+# Sem isso, recarregar em /senha devolve 404 da hospedagem.
+customRules:
+  - source: /<*>
+    target: /index.html
+    status: '200'
