@@ -226,13 +226,37 @@ export async function demoBaixar(projetoId, caminho) {
   });
 }
 
-export async function demoEnviar(_projetoId, itens) {
+/**
+ * Envio em demonstracao. Nada sai do navegador, mas os arquivos ENTRAM na arvore
+ * ficticia, na pasta de destino: sem isso o arrastar-e-soltar nao poderia ser
+ * revisado, porque a tela recarregaria a lista e o arquivo nao estaria la.
+ */
+export async function demoEnviar(projetoId, itens, destino = '') {
   await esperar(700);
+
+  const doProjeto = bd().arvore[projetoId];
+  if (doProjeto) {
+    const chave = destino || '';
+    if (!doProjeto[chave]) doProjeto[chave] = [];
+    for (const { arquivo } of itens) {
+      const repetido = doProjeto[chave].some((x) => x.nome === arquivo.name);
+      doProjeto[chave].push({
+        // Espelha o rename do servidor: nome repetido vira copia, nunca
+        // substitui o que ja estava la.
+        nome: repetido ? `${arquivo.name} 1` : arquivo.name,
+        tipo: 'arquivo',
+        tamanho: arquivo.size,
+        nivel: 'total',
+      });
+    }
+  }
+
   return {
     status: 200,
     enviados: itens.map(({ arquivo }) => arquivo.name),
+    renomeados: [],
     falhas: [],
-    pasta: 'Sent by client',
+    pasta: destino,
   };
 }
 

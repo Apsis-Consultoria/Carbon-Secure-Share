@@ -3,20 +3,29 @@
 // -----------------------------------------------------------------------------
 // POST multipart/form-data
 //   projeto_id  uuid (obrigatorio, precisa estar no token)
+//   destino     pasta de destino, relativa a raiz do projeto ('' = raiz)
 //   arquivo     um ou mais
 //   caminho     um por arquivo, na MESMA ordem, com a subpasta de origem
+//               (preserva a estrutura quando se arrasta uma pasta inteira)
 //
-// Os envios do cliente caem numa subpasta fixa "Enviados pelo cliente", e nao na
-// raiz do projeto. Duas razoes:
+// DESTINO ESCOLHIDO PELO CLIENTE, e nao mais uma pasta fixa.
 //
-//   1. a equipe da APSIS precisa distinguir o que ela mandou do que o cliente
-//      mandou. Misturado na mesma arvore, ninguem sabe a origem de um arquivo
-//      tres semanas depois;
-//   2. sem isso, um envio do cliente com o mesmo nome de um documento da APSIS
-//      SOBRESCREVERIA o documento, porque o PUT de conteudo do Graph substitui.
-//      Numa pasta de due diligence, isso e perda de evidencia.
+// A versao anterior forcava tudo para "Enviados pelo cliente". Isso dava duas
+// garantias: a equipe sabia o que veio de fora, e nenhum envio podia sobrescrever
+// documento da APSIS. O pedido do dono foi arrastar e soltar em QUALQUER pasta,
+// como no explorador de arquivos, e isso e incompativel com a pasta fixa.
 //
-// O cliente nunca escolhe a pasta de destino, so a estrutura de dentro dela.
+// A garantia contra sobrescrita NAO foi abandonada, foi trocada de lugar: o
+// upload usa conflictBehavior=rename (ver _shared/graph.ts), entao um arquivo de
+// nome repetido vira copia em vez de substituir o original, e o nome final volta
+// para a tela avisar. Perda de evidencia por sobrescrita continua impossivel.
+//
+// O que se perdeu: a separacao automatica entre o que a APSIS enviou e o que o
+// cliente enviou. Se isso voltar a ser necessario, o lugar e uma coluna de
+// procedencia no banco, nao a pasta.
+//
+// `destino` e sempre RELATIVO a pasta do projeto e passa por limparCaminho, que
+// descarta ".." e separadores: nao ha como escrever fora do projeto.
 
 import { tratarOptions, respostaErro, respostaJson } from '../_shared/cors.ts';
 import { extrairToken, verificarSessao, projetoAutorizado } from '../_shared/sessao.ts';
@@ -25,8 +34,6 @@ import { ErroGraph, enviarArquivo, garantirPasta, temConfigAzure } from '../_sha
 import { limparCaminho, limparNome } from '../_shared/caminho.ts';
 
 const METODOS = 'POST, OPTIONS';
-
-const PASTA_CLIENTE = 'Enviados pelo cliente';
 
 // Upload simples do Graph. Acima disso seria preciso sessao resumavel
 // (createUploadSession), que e trabalho proprio; recusamos com mensagem clara em
@@ -64,10 +71,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const caminhos = form.getAll('caminho').map((c) => String(c ?? ''));
 
+    // Destino relativo a pasta do projeto. limparCaminho descarta '..' e
+    // separadores tortos, entao nao ha como escrever fora do projeto.
+    const destinoBruto = String(form.get('destino') ?? '').trim();
+    const destinoRel = limparCaminho(destinoBruto);
+    if (destinoBruto && !destinoRel) return respostaErro('destino_invalido', 400, METODOS);
+
     const cfg = await lerConfigSharePoint();
-    const base = `${projeto.pasta}/${PASTA_CLIENTE}`;
+    const base = destinoRel ? `${projeto.pasta}/${destinoRel}` : projeto.pasta;
 
     const enviados: string[] = [];
+    const renomeados: { pedido: string; gravado: string }[] = [];
     const falhas: { arquivo: string; motivo: string }[] = [];
 
     // Cada pasta e garantida UMA vez por requisicao: uma pasta arrastada com 30
@@ -100,15 +114,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
           pastasProntas.add(destino);
         }
 
-        const ok = await enviarArquivo(
+        const nomeFinal = await enviarArquivo(
           cfg,
           `${destino}/${nome}`,
           arquivo.stream(),
           arquivo.type,
         );
 
-        if (ok) enviados.push(origem ? `${origem}/${nome}` : nome);
-        else falhas.push({ arquivo: arquivo.name, motivo: 'O armazenamento recusou o arquivo.' });
+        if (nomeFinal) {
+          enviados.push(origem ? `${origem}/${nomeFinal}` : nomeFinal);
+          // Nome diferente do pedido = ja existia um arquivo assim e o
+          // SharePoint criou uma copia. A tela precisa dizer isso.
+          if (nomeFinal !== nome) renomeados.push({ pedido: nome, gravado: nomeFinal });
+        } else {
+          falhas.push({ arquivo: arquivo.name, motivo: 'O armazenamento recusou o arquivo.' });
+        }
       } catch (e) {
         console.error(`Envio de ${nome} falhou:`, e);
         falhas.push({ arquivo: arquivo.name, motivo: 'Falha inesperada no envio.' });
@@ -118,7 +138,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // 207 quando parte subiu e parte nao: a tela precisa distinguir isso de um
     // sucesso liso, senao o cliente vai embora achando que mandou tudo.
     const status = falhas.length ? (enviados.length ? 207 : 502) : 200;
-    return respostaJson({ enviados, falhas, pasta: PASTA_CLIENTE }, status, METODOS);
+    return respostaJson({ enviados, renomeados, falhas, pasta: destinoRel }, status, METODOS);
   } catch (e) {
     if (e instanceof ErroGraph) return respostaErro(e.codigo, e.status, METODOS);
     console.error('Falha inesperada em carbon-ss-enviar:', e);

@@ -256,10 +256,12 @@ export async function baixarBytes(projetoId, caminho, signal) {
  * Sem Content-Type na mao: o navegador precisa montar o boundary do multipart.
  * Sem o timeout padrao: um envio grande passa de 20 segundos com folga.
  */
-export async function enviar(projetoId, itens, { signal } = {}) {
-  if (MODO_DEMO_ATIVO()) return demoEnviar(projetoId, itens);
+export async function enviar(projetoId, itens, { destino = '', signal } = {}) {
+  if (MODO_DEMO_ATIVO()) return demoEnviar(projetoId, itens, destino);
   const formulario = new FormData();
   formulario.append('projeto_id', projetoId);
+  // Pasta de destino, relativa a raiz do projeto. '' = raiz.
+  formulario.append('destino', destino);
   for (const { arquivo, subPath } of itens) {
     formulario.append('arquivo', arquivo, arquivo.name);
     formulario.append('caminho', subPath || '');

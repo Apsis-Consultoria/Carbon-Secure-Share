@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Folder, FolderOpen, ChevronRight, ChevronDown, Download, Loader2, RefreshCw, LogOut,
-  KeyRound, UploadCloud, X, FileText, FileSpreadsheet, Image as IconeImagem,
-  File as IconeArquivo, FolderArchive, Lock, Inbox, FlaskConical,
+  KeyRound, UploadCloud, FileText, FileSpreadsheet, Image as IconeImagem,
+  File as IconeArquivo, FolderArchive, Lock, Inbox, FlaskConical, FolderInput,
 } from 'lucide-react';
 
 import { listar, enviar, urlArquivo, baixarBytes } from '@/lib/api';
@@ -17,37 +17,35 @@ import Carregando from '@/components/ui/Carregando';
 import EstadoVazio from '@/components/ui/EstadoVazio';
 import AvisoDiscreto from '@/components/ui/AvisoDiscreto';
 import BarraProgresso from '@/components/ui/BarraProgresso';
-import BotaoPrimario from '@/components/ui/BotaoPrimario';
 import BotaoSecundario from '@/components/ui/BotaoSecundario';
 
 /**
  * Arquivos - navegacao em DUAS COLUNAS, no formato do explorador do Windows.
  *
- * POR QUE MUDOU DE UMA LISTA PARA ISTO: o Secure Share do Carbon nao e um envio
- * pontual. A pasta e alimentada ao longo do contrato e o cliente volta muitas
- * vezes durante meses. Uma lista unica serve para "baixar e sair"; para navegar
- * de novo toda semana o que serve e explorador - arvore de um lado, conteudo do
- * outro, sem recarregar a pagina a cada clique.
+ * POR QUE: o Secure Share do Carbon nao e um envio pontual. A pasta e alimentada
+ * ao longo do contrato e o cliente volta muitas vezes durante meses. Uma lista
+ * unica serve para "baixar e sair"; para navegar e alimentar toda semana o que
+ * serve e explorador.
  *
- * Esquerda: arvore de pastas e arquivos, com estado de selecao.
+ * Esquerda: arvore de pastas e arquivos, com selecao.
  * Direita:  o arquivo selecionado, aberto ali mesmo.
  *
- * EM TELA ESTREITA nao ha duas colunas: a lista ocupa tudo e, ao escolher um
- * arquivo, o visualizador cobre a tela com um botao de voltar. Duas colunas em
- * 380px dariam duas colunas ruins em vez de uma boa.
+ * ARRASTAR E SOLTAR EM CIMA DA PASTA. Cada pasta da arvore e um alvo: soltar
+ * arquivos sobre ela envia PARA ELA, na hora, sem fila e sem botao de confirmar,
+ * que e o gesto do explorador. Soltar no fundo da arvore envia para a raiz do
+ * projeto. Pasta arrastada inteira preserva a estrutura.
  *
- * A altura e h-screen com overflow travado no involucro, e cada coluna rola por
- * dentro. E o que faz a tela parecer um aplicativo de arquivos, e nao uma pagina
- * comprida: o cabecalho e o envio ficam sempre no lugar.
+ * O servidor NUNCA sobrescreve: nome repetido vira copia (conflictBehavior
+ * rename) e a tela avisa quais foram renomeados. Sem isso, um arquivo do cliente
+ * com o mesmo nome apagaria um documento da APSIS - perda de evidencia
+ * silenciosa numa pasta de due diligence.
+ *
+ * EM TELA ESTREITA nao ha duas colunas: a lista ocupa tudo e o visualizador cobre
+ * a tela com um botao de voltar.
  */
 
 /* ===== Apoio ============================================================== */
 
-/**
- * Formatador de tamanho preso ao idioma: "4.0 MB" em ingles, "4,0 MB" em
- * portugues. Numero no formato errado e o detalhe que faz a traducao parecer
- * inacabada.
- */
 function criarFormatador(idioma) {
   const local = idioma === 'pt' ? 'pt-BR' : 'en-US';
   return (bytes) => {
@@ -74,6 +72,68 @@ function IconeDoArquivo({ nome }) {
   return <IconeArquivo size={15} className="text-[#8A9990] shrink-0" />;
 }
 
+/* ===== Leitura do que foi arrastado ======================================= */
+// A FileSystem API e a unica forma de ler uma PASTA solta na tela.
+//
+// `webkitGetAsEntry` precisa ser chamado de forma SINCRONA no handler do drop:
+// os DataTransferItem sao invalidados assim que o handler cede o controle, e um
+// `await` antes disso faz a leitura devolver vazio, sem erro nenhum. Por isso a
+// coleta e a travessia estao separadas em duas funcoes.
+
+function coletarDoEvento(evento) {
+  const entradas = [];
+  for (const item of evento.dataTransfer?.items ?? []) {
+    const entrada = item.webkitGetAsEntry?.();
+    if (entrada) entradas.push(entrada);
+  }
+  return { entradas, simples: Array.from(evento.dataTransfer?.files ?? []) };
+}
+
+async function lerTodasAsEntradas(leitor) {
+  const todas = [];
+  const lote = () => new Promise((ok, falha) => leitor.readEntries(ok, falha));
+  let atual;
+  do {
+    atual = await lote();
+    todas.push(...atual);
+  } while (atual.length > 0);
+  return todas;
+}
+
+async function percorrer(entradas, prefixo = '') {
+  const saida = [];
+  for (const entrada of entradas) {
+    if (entrada.isFile) {
+      const arquivo = await new Promise((ok, falha) => entrada.file(ok, falha));
+      saida.push({ arquivo, subPath: prefixo });
+    } else if (entrada.isDirectory) {
+      const filhos = await lerTodasAsEntradas(entrada.createReader());
+      saida.push(
+        ...(await percorrer(filhos, prefixo ? `${prefixo}/${entrada.name}` : entrada.name)),
+      );
+    }
+  }
+  return saida;
+}
+
+/** Resolve o que foi solto em `[{arquivo, subPath}]`, com pasta ou sem. */
+async function resolverSoltos({ entradas, simples }) {
+  if (entradas.length) {
+    try {
+      const itens = await percorrer(entradas);
+      if (itens.length) return itens;
+    } catch {
+      // cai no fallback de arquivos simples
+    }
+  }
+  return simples.map((arquivo) => ({ arquivo, subPath: '' }));
+}
+
+/** Ha arquivo sendo arrastado? Evita destacar pasta ao arrastar texto. */
+function arrastandoArquivo(evento) {
+  return Array.from(evento.dataTransfer?.types ?? []).includes('Files');
+}
+
 /* ===== Tela =============================================================== */
 
 export default function Arquivos({ sessao, aoSair }) {
@@ -92,8 +152,15 @@ export default function Arquivos({ sessao, aoSair }) {
   const [ocupadas, setOcupadas] = useState(new Set());
   const [selecionado, setSelecionado] = useState(null);
 
+  // Pasta que recebe o envio pelo BOTAO (o arrastar usa a pasta sob o cursor).
+  const [pastaAtual, setPastaAtual] = useState('');
+  // Pasta sob o cursor durante o arraste. null = nenhuma; '' = raiz.
+  const [alvoSoltar, setAlvoSoltar] = useState(null);
+  const [enviando, setEnviando] = useState(null);
+
   const [zip, setZip] = useState(null);
   const abortarZip = useRef(null);
+  const refInput = useRef(null);
 
   const emDemo = MODO_DEMO && sessao.demo;
 
@@ -104,6 +171,7 @@ export default function Arquivos({ sessao, aoSair }) {
     setConteudo({});
     setAbertas(new Set());
     setSelecionado(null);
+    setPastaAtual('');
     try {
       const r = await listar(projetoId, '');
       setRaiz(r.itens ?? []);
@@ -116,7 +184,25 @@ export default function Arquivos({ sessao, aoSair }) {
 
   useEffect(() => { carregarRaiz(); }, [carregarRaiz]);
 
+  /** Relê UMA pasta e deixa ela aberta. Usado depois de um envio. */
+  const recarregarPasta = useCallback(
+    async (caminho) => {
+      const r = await listar(projetoId, caminho);
+      if (!caminho) {
+        setRaiz(r.itens ?? []);
+        return;
+      }
+      setConteudo((a) => ({ ...a, [caminho]: r.itens ?? [] }));
+      setAbertas((a) => new Set([...a, caminho]));
+    },
+    [projetoId],
+  );
+
   async function alternarPasta(caminho) {
+    // Clicar numa pasta tambem a torna a pasta ATUAL, como no explorador: o
+    // proximo envio pelo botao vai para ela.
+    setPastaAtual(caminho);
+
     if (abertas.has(caminho)) {
       setAbertas((a) => { const n = new Set(a); n.delete(caminho); return n; });
       return;
@@ -138,28 +224,70 @@ export default function Arquivos({ sessao, aoSair }) {
     }
   }
 
-  /**
-   * Baixar em modo demonstracao: nao ha backend, entao montamos um blob com o
-   * conteudo ficticio. Sem isto o botao apontaria para /api e daria 404.
-   */
-  async function baixarNoDemo(caminho, nome) {
+  /* ---- Envio ------------------------------------------------------------- */
+
+  const rotuloPasta = (caminho) =>
+    caminho ? caminho.split('/').pop() : t('envio.paraRaiz');
+
+  async function enviarPara(itens, destino) {
+    if (!itens.length || enviando) return;
+
+    setEnviando({ n: itens.length, destino });
     try {
-      const resposta = await baixarBytes(projetoId, caminho);
-      const blob = await resposta.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      // .txt porque o conteudo ficticio e texto: salvar como .pdf faria o leitor
-      // de PDF acusar corrupcao e parecer defeito nosso.
-      link.download = `${nome}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-      toast.info(t('demo.arquivoAviso'));
+      const r = await enviar(projetoId, itens, { destino });
+
+      if (r.falhas?.length) {
+        toast.warning(
+          t('envio.parcial', { enviados: r.enviados.length, falhas: r.falhas.length }),
+          {
+            description: r.falhas.map((f) => `${f.arquivo}: ${f.motivo}`).join(' | '),
+            duration: 12000,
+          },
+        );
+      } else {
+        toast.success(t('envio.sucesso', { n: r.enviados.length }), {
+          // Renomeacao nao e detalhe: quem enviou precisa saber que o arquivo
+          // ficou com outro nome, senao vai procurar o original e nao achar.
+          description: r.renomeados?.length
+            ? t('envio.renomeados', { n: r.renomeados.length })
+            : undefined,
+          duration: r.renomeados?.length ? 12000 : 5000,
+        });
+      }
+
+      await recarregarPasta(destino);
     } catch (e) {
-      toast.error(textoDoErro(t, e));
+      toast.error(t('envio.falhou'), { description: textoDoErro(t, e) });
+    } finally {
+      setEnviando(null);
     }
+  }
+
+  /** Handlers de soltar, iguais para uma pasta e para o fundo da arvore. */
+  function alvoDeSolta(caminho) {
+    return {
+      onDragOver: (e) => {
+        if (!arrastandoArquivo(e) || enviando) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setAlvoSoltar(caminho);
+      },
+      onDragLeave: (e) => {
+        e.stopPropagation();
+        setAlvoSoltar((a) => (a === caminho ? null : a));
+      },
+      onDrop: async (e) => {
+        if (!arrastandoArquivo(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setAlvoSoltar(null);
+        // Coleta SINCRONA: ver a nota em "Leitura do que foi arrastado".
+        const coletado = coletarDoEvento(e);
+        const itens = await resolverSoltos(coletado);
+        if (itens.length) enviarPara(itens, caminho);
+        else toast.error(t('envio.falhou'));
+      },
+    };
   }
 
   /* ---- ZIP de pasta ------------------------------------------------------ */
@@ -187,8 +315,6 @@ export default function Arquivos({ sessao, aoSair }) {
           description: r.ignorados ? t('zip.somenteVisualizacao', { n: r.ignorados }) : undefined,
         });
       } else {
-        // Nunca deixamos a ausência silenciosa: quem baixou precisa saber que o
-        // ZIP não tem tudo que aparece na tela.
         const partes = [];
         if (r.ignorados) partes.push(t('zip.foraSoVisualizar', { n: r.ignorados }));
         if (r.truncado) partes.push(t('zip.truncado'));
@@ -205,6 +331,28 @@ export default function Arquivos({ sessao, aoSair }) {
     }
   }
 
+  /* ---- Download em demonstracao ------------------------------------------ */
+
+  async function baixarNoDemo(caminho, nome) {
+    try {
+      const resposta = await baixarBytes(projetoId, caminho);
+      const blob = await resposta.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      // .txt porque o conteudo ficticio e texto: salvar como .pdf faria o leitor
+      // de PDF acusar corrupcao e parecer defeito nosso.
+      link.download = `${nome}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast.info(t('demo.arquivoAviso'));
+    } catch (e) {
+      toast.error(textoDoErro(t, e));
+    }
+  }
+
   /* ---- Árvore ------------------------------------------------------------ */
 
   function linhas(itens, profundidade, pai) {
@@ -216,26 +364,44 @@ export default function Arquivos({ sessao, aoSair }) {
         const aberta = abertas.has(caminho);
         const ocupada = ocupadas.has(caminho);
         const filhos = conteudo[caminho];
+        const sobrePasta = alvoSoltar === caminho;
+        const ehAtual = pastaAtual === caminho;
 
         const linha = (
-          <li key={caminho} className="group flex items-center">
+          <li
+            key={caminho}
+            className={`group flex items-center rounded-md transition ${
+              sobrePasta ? 'bg-[#F48126]/15 ring-2 ring-inset ring-[#F48126]' : ''
+            }`}
+            {...alvoDeSolta(caminho)}
+          >
             <button
               type="button"
               onClick={() => alternarPasta(caminho)}
               aria-expanded={aberta}
+              title={sobrePasta ? t('envio.soltarNaPasta', { nome: item.nome }) : item.nome}
               style={{ paddingLeft: `${recuo}px` }}
-              className="flex items-center gap-1.5 flex-1 min-w-0 py-1.5 pr-2 text-left
-                hover:bg-[#F4F6F4] transition rounded-md"
+              className={`flex items-center gap-1.5 flex-1 min-w-0 py-1.5 pr-2 text-left rounded-md transition ${
+                sobrePasta ? '' : ehAtual ? 'bg-[#F4F6F4]' : 'hover:bg-[#F4F6F4]'
+              }`}
             >
               <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[#8A9990]">
                 {ocupada ? <Loader2 size={12} className="animate-spin" />
                   : aberta ? <ChevronDown size={13} />
                   : <ChevronRight size={13} />}
               </span>
-              {aberta
-                ? <FolderOpen size={14} className="text-[#C98A2B] shrink-0" />
-                : <Folder size={14} className="text-[#C98A2B] shrink-0" />}
-              <span className="text-[13px] font-medium text-[#1A2B1F] truncate">{item.nome}</span>
+              {sobrePasta
+                ? <FolderInput size={14} className="text-[#F48126] shrink-0" />
+                : aberta
+                  ? <FolderOpen size={14} className="text-[#C98A2B] shrink-0" />
+                  : <Folder size={14} className="text-[#C98A2B] shrink-0" />}
+              <span
+                className={`text-[13px] truncate ${
+                  sobrePasta ? 'text-[#8A5A12] font-semibold' : 'font-medium text-[#1A2B1F]'
+                }`}
+              >
+                {item.nome}
+              </span>
             </button>
 
             <BotaoSecundario
@@ -329,6 +495,8 @@ export default function Arquivos({ sessao, aoSair }) {
       }
     : null;
 
+  const sobreRaiz = alvoSoltar === '';
+
   return (
     <div className="h-screen flex flex-col bg-[#F4F6F4] overflow-hidden">
       {/* ---- Cabecalho ---- */}
@@ -367,8 +535,6 @@ export default function Arquivos({ sessao, aoSair }) {
           </button>
         </div>
 
-        {/* Abas de projeto: só com mais de um. A mesma pessoa pode ser cliente
-            de vários projetos de carbono. */}
         {projetos.length > 1 && (
           <div className="px-4 pb-2 flex items-center gap-1.5 flex-wrap">
             {projetos.map((p) => (
@@ -450,7 +616,24 @@ export default function Arquivos({ sessao, aoSair }) {
             </div>
           )}
 
-          <div className="flex-1 min-h-0 overflow-auto py-1.5 px-1.5">
+          {enviando && (
+            <p className="px-3 py-2 border-b border-[#DDE3DE] bg-[#1A4731]/5 text-[11px]
+              text-[#1A4731] flex items-center gap-2 flex-shrink-0">
+              <Loader2 size={13} className="animate-spin shrink-0" />
+              {t('envio.enviando', {
+                n: enviando.n,
+                nome: rotuloPasta(enviando.destino),
+              })}
+            </p>
+          )}
+
+          {/* O fundo da arvore tambem e alvo: soltar aqui envia para a raiz. */}
+          <div
+            {...alvoDeSolta('')}
+            className={`flex-1 min-h-0 overflow-auto py-1.5 px-1.5 transition ${
+              sobreRaiz ? 'bg-[#F48126]/10 ring-2 ring-inset ring-[#F48126]' : ''
+            }`}
+          >
             {carregando ? (
               <div className="p-6"><Carregando rotulo={t('docs.carregando')} /></div>
             ) : erro ? (
@@ -471,7 +654,39 @@ export default function Arquivos({ sessao, aoSair }) {
             )}
           </div>
 
-          <Envio projetoId={projetoId} aoTerminar={carregarRaiz} />
+          {/* Barra de envio: diz PARA ONDE vai e abre o seletor de arquivos.
+              Arrastar continua sendo o caminho principal; isto atende quem
+              prefere clicar e quem usa teclado. */}
+          <div className="border-t border-[#DDE3DE] p-2 flex-shrink-0 bg-[#F4F6F4]/50">
+            <button
+              type="button"
+              disabled={Boolean(enviando)}
+              onClick={() => refInput.current?.click()}
+              className="w-full flex items-center gap-2 rounded-xl border border-dashed
+                border-[#DDE3DE] bg-white px-3 py-2 text-[12px] text-[#5C7060]
+                hover:border-[#1A4731]/40 hover:text-[#1A4731] transition
+                disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <UploadCloud size={15} className="shrink-0" />
+              <span className="truncate">
+                {t('envio.destino', { nome: rotuloPasta(pastaAtual) })}
+              </span>
+            </button>
+            <input
+              ref={refInput}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const itens = Array.from(e.target.files).map((arquivo) => ({
+                  arquivo,
+                  subPath: '',
+                }));
+                e.target.value = '';
+                if (itens.length) enviarPara(itens, pastaAtual);
+              }}
+            />
+          </div>
         </aside>
 
         {/* Coluna 2: visualizador */}
@@ -487,129 +702,6 @@ export default function Arquivos({ sessao, aoSair }) {
           />
         </section>
       </div>
-    </div>
-  );
-}
-
-/* ===== Envio pelo cliente ================================================= */
-/* Compacto e no rodape da coluna da esquerda: num explorador o envio e uma acao
-   secundaria e constante, nao o assunto da tela. O cartao grande de antes
-   empurrava a arvore para baixo da dobra.                                     */
-
-function Envio({ projetoId, aoTerminar }) {
-  const { t, idioma } = useIdioma();
-  const fmtTamanho = criarFormatador(idioma);
-
-  const [fila, setFila] = useState([]);
-  const [arrastando, setArrastando] = useState(false);
-  const [enviando, setEnviando] = useState(false);
-  const refInput = useRef(null);
-
-  function acrescentar(itens) {
-    setFila((atual) => {
-      const proxima = [...atual];
-      for (const item of itens) {
-        const repetido = proxima.some(
-          (x) => x.arquivo.name === item.arquivo.name && x.arquivo.size === item.arquivo.size,
-        );
-        if (!repetido) proxima.push(item);
-      }
-      return proxima;
-    });
-  }
-
-  async function despachar() {
-    if (!fila.length || enviando) return;
-    setEnviando(true);
-    try {
-      const r = await enviar(projetoId, fila);
-      setFila([]);
-      if (r.falhas?.length) {
-        toast.warning(
-          t('envio.parcial', { enviados: r.enviados.length, falhas: r.falhas.length }),
-          {
-            description: r.falhas.map((f) => `${f.arquivo}: ${f.motivo}`).join(' | '),
-            duration: 12000,
-          },
-        );
-      } else {
-        toast.success(t('envio.sucesso', { n: r.enviados.length }));
-      }
-      aoTerminar?.();
-    } catch (e) {
-      toast.error(t('envio.falhou'), { description: textoDoErro(t, e) });
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  return (
-    <div className="border-t border-[#DDE3DE] p-2.5 flex-shrink-0 bg-[#F4F6F4]/40">
-      <div
-        onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
-        onDragLeave={() => setArrastando(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setArrastando(false);
-          const arquivos = Array.from(e.dataTransfer.files ?? []);
-          if (arquivos.length) acrescentar(arquivos.map((arquivo) => ({ arquivo, subPath: '' })));
-        }}
-        onClick={() => !enviando && refInput.current?.click()}
-        className={`flex items-center justify-center gap-2 rounded-xl border border-dashed
-          px-3 py-2.5 cursor-pointer select-none transition text-[12px] ${
-            arrastando
-              ? 'border-[#1A4731] bg-[#1A4731]/5 text-[#1A4731]'
-              : 'border-[#DDE3DE] bg-white text-[#5C7060] hover:border-[#1A4731]/40'
-          }`}
-      >
-        <UploadCloud size={15} className="shrink-0" />
-        <span className="truncate">{arrastando ? t('envio.solte') : t('envio.arraste')}</span>
-        <input
-          ref={refInput}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            acrescentar(Array.from(e.target.files).map((arquivo) => ({ arquivo, subPath: '' })));
-            e.target.value = '';
-          }}
-        />
-      </div>
-
-      {fila.length > 0 && (
-        <div className="mt-2 space-y-1.5">
-          <ul className="space-y-1 max-h-32 overflow-auto">
-            {fila.map(({ arquivo }, i) => (
-              <li
-                key={`${arquivo.name}-${i}`}
-                className="flex items-center gap-2 px-2 py-1 rounded-lg bg-white border border-[#DDE3DE]"
-              >
-                <IconeDoArquivo nome={arquivo.name} />
-                <span className="text-[12px] text-[#1A2B1F] truncate flex-1">{arquivo.name}</span>
-                <span className="text-[10px] text-[#8A9990] shrink-0">
-                  {fmtTamanho(arquivo.size)}
-                </span>
-                <BotaoSecundario
-                  variante="fantasma"
-                  icone={X}
-                  tamanho="sm"
-                  rotuloAcessivel={t('envio.remover', { nome: arquivo.name })}
-                  onClick={() => setFila((a) => a.filter((_, j) => j !== i))}
-                />
-              </li>
-            ))}
-          </ul>
-          <BotaoPrimario
-            larguraTotal
-            tamanho="sm"
-            icone={UploadCloud}
-            carregando={enviando}
-            onClick={despachar}
-          >
-            {t('envio.enviar', { n: fila.length })}
-          </BotaoPrimario>
-        </div>
-      )}
     </div>
   );
 }

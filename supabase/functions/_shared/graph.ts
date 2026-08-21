@@ -278,16 +278,30 @@ export async function garantirPasta(cfg: ConfigSharePoint, caminho: string): Pro
   }
 }
 
-/** Envia um arquivo por upload simples (PUT de conteudo). */
+/**
+ * Envia um arquivo por upload simples (PUT de conteudo).
+ *
+ * NUNCA SOBRESCREVE. O PUT de conteudo do Graph substitui o arquivo existente
+ * por padrao, e isso e inaceitavel aqui: o cliente escolhe a pasta de destino, e
+ * um arquivo dele chamado "Relatorio.pdf" apagaria o "Relatorio.pdf" que a APSIS
+ * enviou. Numa pasta de due diligence isso e perda de evidencia, silenciosa.
+ *
+ * Com conflictBehavior=rename o SharePoint cria "Relatorio 1.pdf" e devolve o
+ * nome final, que subimos ate a tela para a pessoa saber que houve renomeacao em
+ * vez de procurar um arquivo que "sumiu".
+ *
+ * @returns o nome final gravado, ou null se falhou.
+ */
 export async function enviarArquivo(
   cfg: ConfigSharePoint,
   caminho: string,
   corpo: ReadableStream | ArrayBuffer | Uint8Array,
   tipo: string,
-): Promise<boolean> {
+): Promise<string | null> {
   const driveId = await obterDriveId(cfg);
   const resposta = await chamar(
-    `/drives/${driveId}/root:/${caminhoGraph(caminho)}:/content`,
+    `/drives/${driveId}/root:/${caminhoGraph(caminho)}:/content` +
+      '?%40microsoft.graph.conflictBehavior=rename',
     {
       method: 'PUT',
       headers: { 'Content-Type': tipo || 'application/octet-stream' },
@@ -297,9 +311,12 @@ export async function enviarArquivo(
 
   if (!resposta.ok) {
     console.error('Falha no envio ao SharePoint:', resposta.status);
-    return false;
+    await resposta.body?.cancel();
+    return null;
   }
-  // O corpo precisa ser consumido para o socket ser liberado no Deno.
-  await resposta.body?.cancel();
-  return true;
+
+  // O Graph devolve o item criado. Lemos o nome final para detectar renomeacao;
+  // o corpo precisa ser consumido de qualquer forma para liberar o socket.
+  const item = await resposta.json().catch(() => null);
+  return typeof item?.name === 'string' ? item.name : caminho.split('/').pop() ?? null;
 }
