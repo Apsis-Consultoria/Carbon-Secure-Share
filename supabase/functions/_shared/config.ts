@@ -12,10 +12,28 @@
 import { obterAdmin } from './supabase.ts';
 import type { ConfigSharePoint } from './graph.ts';
 
+/**
+ * ONDE OS ARQUIVOS FICAM, decidido em 2026-08-21.
+ *
+ *   https://apsisconsult.sharepoint.com/sites/Projetos
+ *     biblioteca "Secure Share"        <- a MESMA do Portal Apsis
+ *       pasta     "Apsis Carbon"       <- so o que e do Carbon
+ *         "AP-10001-26-001 - Cliente"  <- uma por projeto
+ *
+ * Nao e biblioteca separada: e uma PASTA dentro da biblioteca que a APSIS ja
+ * usa. Por isso existe `pastaBase`, e por isso todo caminho montado para o Graph
+ * comeca por ela. Sem esse prefixo os projetos do Carbon cairiam na raiz da
+ * biblioteca, misturados com os do Portal Apsis.
+ *
+ * `pastaBase` vazia significa "a raiz da biblioteca". Isso e suportado de
+ * proposito: se um dia o Carbon ganhar biblioteca propria, basta limpar o campo
+ * em carbon_app_config, sem tocar em codigo.
+ */
 const PADRAO: ConfigSharePoint = {
   siteHost: 'apsisconsult.sharepoint.com',
   sitePath: '/sites/Projetos',
-  biblioteca: 'Secure Share Carbon',
+  biblioteca: 'Secure Share',
+  pastaBase: 'Apsis Carbon',
 };
 
 let cache: ConfigSharePoint | null = null;
@@ -40,6 +58,23 @@ export async function lerConfigSharePoint(): Promise<ConfigSharePoint> {
     siteHost: texto('siteHost'),
     sitePath: texto('sitePath'),
     biblioteca: texto('biblioteca'),
+    // String vazia e valor VALIDO aqui (raiz da biblioteca), entao ela nao pode
+    // cair no default pelo caminho de texto() acima.
+    pastaBase: typeof valor.pastaBase === 'string' ? valor.pastaBase.trim() : PADRAO.pastaBase,
   };
   return cache;
+}
+
+/**
+ * Caminho absoluto de um item dentro da biblioteca, ja com a pasta base.
+ *
+ * TODO caminho enviado ao Graph precisa passar por aqui. Montar
+ * `${projeto.pasta}/${sub}` a mao esquece o prefixo e escreve na raiz da
+ * biblioteca do Portal Apsis, no meio dos projetos de M&A.
+ */
+export function caminhoNaBiblioteca(
+  cfg: ConfigSharePoint,
+  ...partes: (string | null | undefined)[]
+): string {
+  return [cfg.pastaBase, ...partes].filter((p) => p && String(p).trim()).join('/');
 }

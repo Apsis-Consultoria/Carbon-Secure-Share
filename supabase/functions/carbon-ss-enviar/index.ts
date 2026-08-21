@@ -29,7 +29,7 @@
 
 import { tratarOptions, respostaErro, respostaJson } from '../_shared/cors.ts';
 import { extrairToken, verificarSessao, projetoAutorizado } from '../_shared/sessao.ts';
-import { lerConfigSharePoint } from '../_shared/config.ts';
+import { lerConfigSharePoint, caminhoNaBiblioteca } from '../_shared/config.ts';
 import { ErroGraph, enviarArquivo, garantirPasta, temConfigAzure } from '../_shared/graph.ts';
 import { limparCaminho, limparNome } from '../_shared/caminho.ts';
 
@@ -78,7 +78,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (destinoBruto && !destinoRel) return respostaErro('destino_invalido', 400, METODOS);
 
     const cfg = await lerConfigSharePoint();
-    const base = destinoRel ? `${projeto.pasta}/${destinoRel}` : projeto.pasta;
+    const base = caminhoNaBiblioteca(cfg, projeto.pasta, destinoRel);
 
     const enviados: string[] = [];
     const renomeados: { pedido: string; gravado: string }[] = [];

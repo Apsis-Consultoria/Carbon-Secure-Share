@@ -17,7 +17,7 @@
 import { tratarOptions, respostaErro, respostaJson } from '../_shared/cors.ts';
 import { extrairToken, verificarSessao, projetoAutorizado } from '../_shared/sessao.ts';
 import { carregarPermissoes } from '../_shared/permissoes.ts';
-import { lerConfigSharePoint } from '../_shared/config.ts';
+import { lerConfigSharePoint, caminhoNaBiblioteca } from '../_shared/config.ts';
 import { ErroGraph, listarPasta, temConfigAzure } from '../_shared/graph.ts';
 import { limparCaminho } from '../_shared/caminho.ts';
 
@@ -42,7 +42,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const sub = limparCaminho(url.searchParams.get('sub') ?? '');
     const cfg = await lerConfigSharePoint();
-    const caminho = sub ? `${projeto.pasta}/${sub}` : projeto.pasta;
+    const caminho = caminhoNaBiblioteca(cfg, projeto.pasta, sub);
 
     const [itens, permissoes] = await Promise.all([
       listarPasta(cfg, caminho),

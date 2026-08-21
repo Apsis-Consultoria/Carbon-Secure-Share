@@ -40,7 +40,10 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 // producao eles vem da linha `secure_share` de carbon_app_config.
 const SP_HOST = process.env.SP_HOST || 'apsisconsult.sharepoint.com';
 const SP_SITE_PATH = process.env.SP_SITE_PATH || '/sites/Projetos';
-const SP_BIBLIOTECA = process.env.SP_BIBLIOTECA || 'Secure Share Carbon';
+const SP_BIBLIOTECA = process.env.SP_BIBLIOTECA || 'Secure Share';
+// Pasta dentro da biblioteca onde tudo do Carbon vive. O teste de escrita
+// acontece DENTRO dela, para nao sujar a raiz que o Portal Apsis usa.
+const SP_PASTA_BASE = process.env.SP_PASTA_BASE ?? 'Apsis Carbon';
 
 const TESTAR_ESCRITA = process.argv.includes('--escrita');
 
@@ -55,6 +58,9 @@ const ok = (s) => console.log(`${cor(32, '  OK  ')} ${s}`);
 const aviso = (s) => console.log(`${cor(33, ' AVISO')} ${s}`);
 const erro = (s) => { falhou = true; console.log(`${cor(31, ' ERRO ')} ${s}`); };
 const dica = (s) => console.log(`        ${cor(90, s)}`);
+
+/** Codifica caminho segmento a segmento: encodeURIComponent inteiro comeria as barras. */
+const caminhoSeg = (c) => c.split('/').filter(Boolean).map(encodeURIComponent).join('/');
 
 function titulo(t) {
   console.log(`\n${cor(36, '='.repeat(66))}\n${cor(36, t)}\n${cor(36, '='.repeat(66))}`);
@@ -226,6 +232,7 @@ if (respSite.status === 403) {
     } else {
       driveId = alvo.id;
       ok(`Biblioteca encontrada: ${SP_BIBLIOTECA}`);
+      if (SP_PASTA_BASE) dica(`Pasta base do Carbon: ${SP_PASTA_BASE}`);
     }
   }
 }
@@ -254,14 +261,21 @@ if (driveId && TESTAR_ESCRITA) {
   titulo('6. Escrita (cria, envia, le e apaga)');
 
   // Nome improvavel de colidir com pasta real, e apagado no fim de qualquer jeito.
-  const pasta = `_diagnostico-apsis-${Date.now()}`;
+  const nomeTemp = `_diagnostico-apsis-${Date.now()}`;
+  const pasta = SP_PASTA_BASE ? `${SP_PASTA_BASE}/${nomeTemp}` : nomeTemp;
   let criou = false;
 
-  const respPasta = await graph(`/drives/${driveId}/root/children`, {
+  // Cria dentro da pasta base. Se ela nao existir, o Graph devolve 404 aqui, e
+  // e exatamente o aviso que queremos: a pasta precisa existir antes.
+  const alvoCriacao = SP_PASTA_BASE
+    ? `/drives/${driveId}/root:/${encodeURIComponent(SP_PASTA_BASE)}:/children`
+    : `/drives/${driveId}/root/children`;
+
+  const respPasta = await graph(alvoCriacao, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name: pasta,
+      name: nomeTemp,
       folder: {},
       '@microsoft.graph.conflictBehavior': 'fail',
     }),
@@ -269,6 +283,9 @@ if (driveId && TESTAR_ESCRITA) {
 
   if (!respPasta.ok) {
     erro(`Nao foi possivel criar pasta (${respPasta.status}).`);
+    if (respPasta.status === 404 && SP_PASTA_BASE) {
+      dica(`A pasta base "${SP_PASTA_BASE}" nao existe na biblioteca. Crie-a primeiro.`);
+    }
     if (respPasta.status === 403) {
       dica('O app le mas nao escreve: falta permissao de ESCRITA neste site.');
       dica('Com Sites.Selected, o papel concedido precisa ser "write", nao "read".');
@@ -278,7 +295,7 @@ if (driveId && TESTAR_ESCRITA) {
     ok(`Pasta criada: ${pasta}`);
 
     const respUp = await graph(
-      `/drives/${driveId}/root:/${encodeURIComponent(pasta)}/teste.txt:/content` +
+      `/drives/${driveId}/root:/${caminhoSeg(pasta)}/teste.txt:/content` +
         '?%40microsoft.graph.conflictBehavior=rename',
       {
         method: 'PUT',
@@ -293,7 +310,7 @@ if (driveId && TESTAR_ESCRITA) {
       ok('Arquivo enviado.');
 
       const respLer = await graph(
-        `/drives/${driveId}/root:/${encodeURIComponent(pasta)}/teste.txt:/content`,
+        `/drives/${driveId}/root:/${caminhoSeg(pasta)}/teste.txt:/content`,
       );
       if (!respLer.ok) {
         erro(`Nao foi possivel ler o arquivo de volta (${respLer.status}).`);
@@ -306,7 +323,7 @@ if (driveId && TESTAR_ESCRITA) {
   }
 
   if (criou) {
-    const respDel = await graph(`/drives/${driveId}/root:/${encodeURIComponent(pasta)}`, {
+    const respDel = await graph(`/drives/${driveId}/root:/${caminhoSeg(pasta)}`, {
       method: 'DELETE',
     });
     if (respDel.ok || respDel.status === 204) ok('Pasta de teste removida.');

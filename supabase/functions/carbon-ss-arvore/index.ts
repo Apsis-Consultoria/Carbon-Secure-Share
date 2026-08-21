@@ -21,7 +21,7 @@
 import { tratarOptions, respostaErro, respostaJson } from '../_shared/cors.ts';
 import { extrairToken, verificarSessao, projetoAutorizado } from '../_shared/sessao.ts';
 import { carregarPermissoes } from '../_shared/permissoes.ts';
-import { lerConfigSharePoint } from '../_shared/config.ts';
+import { lerConfigSharePoint, caminhoNaBiblioteca } from '../_shared/config.ts';
 import { ErroGraph, listarPasta, temConfigAzure, type ConfigSharePoint } from '../_shared/graph.ts';
 import { limparCaminho } from '../_shared/caminho.ts';
 import type { Resolvedor } from '../_shared/regrasPermissao.ts';
@@ -105,7 +105,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const arquivos: Arquivo[] = [];
     const estado = { ignorados: 0, truncado: false };
-    await percorrer(cfg, projeto.pasta, sub, permissoes, arquivos, estado, 0);
+    await percorrer(cfg, caminhoNaBiblioteca(cfg, projeto.pasta), sub, permissoes, arquivos, estado, 0);
 
     return respostaJson(
       {

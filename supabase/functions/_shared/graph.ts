@@ -112,9 +112,49 @@ export type ConfigSharePoint = {
   siteHost: string;
   sitePath: string;
   biblioteca: string;
+  /**
+   * Pasta dentro da biblioteca onde TUDO do Carbon vive ('' = raiz).
+   *
+   * Existe porque o Carbon divide a biblioteca "Secure Share" com o Portal
+   * Apsis: sem o prefixo, os projetos dos dois se misturariam na raiz. Use
+   * sempre caminhoNaBiblioteca() de _shared/config.ts para monta-lo.
+   */
+  pastaBase: string;
 };
 
 const cacheDrive = new Map<string, string>();
+
+
+/**
+ * TRAVA: nenhum caminho pode sair da pasta base.
+ *
+ * Chamada no topo de TODA funcao que toca um caminho. Nao e conveniencia, e
+ * contencao: o consentimento do Azure (Sites.Selected) e por SITE, nao por
+ * pasta, entao a credencial tecnicamente alcanca a biblioteca inteira -
+ * inclusive os projetos do Portal Apsis, que dividem a mesma biblioteca
+ * "Secure Share". O que impede o Carbon de escrever la e ESTE codigo.
+ *
+ * Por isso a checagem fica aqui embaixo, no unico ponto por onde todo caminho
+ * passa, e nao em cada chamador. Esquecer o prefixo passa a ser um erro
+ * barulhento em vez de uma escrita silenciosa na pasta errada.
+ *
+ * pastaBase vazia significa "a biblioteca inteira e o escopo": nesse caso nao
+ * ha o que conferir.
+ */
+function exigirDentroDaBase(cfg: ConfigSharePoint, caminho: string): void {
+  const base = (cfg.pastaBase ?? '').trim().replace(/^\/+|\/+$/g, '');
+  if (!base) return;
+
+  const alvo = String(caminho ?? '').replace(/^\/+/, '');
+  if (alvo === base || alvo.startsWith(`${base}/`)) return;
+
+  console.error(`Caminho fora da pasta base: "${alvo}" nao esta em "${base}".`);
+  throw new ErroGraph(
+    'fora_da_pasta_base',
+    'Operacao recusada: o caminho esta fora da pasta do Apsis Carbon.',
+    500,
+  );
+}
 
 export async function obterDriveId(cfg: ConfigSharePoint): Promise<string> {
   const chave = `${cfg.siteHost}${cfg.sitePath}::${cfg.biblioteca}`;
@@ -174,6 +214,7 @@ export async function listarPasta(
   cfg: ConfigSharePoint,
   caminho: string,
 ): Promise<ItemGraph[]> {
+  exigirDentroDaBase(cfg, caminho);
   const driveId = await obterDriveId(cfg);
   const alvo = caminho
     ? `/drives/${driveId}/root:/${caminhoGraph(caminho)}:/children`
@@ -209,6 +250,7 @@ export async function obterItem(
   cfg: ConfigSharePoint,
   caminho: string,
 ): Promise<{ nome: string; tamanho: number; ehPasta: boolean } | null> {
+  exigirDentroDaBase(cfg, caminho);
   const driveId = await obterDriveId(cfg);
   const resposta = await chamar(
     `/drives/${driveId}/root:/${caminhoGraph(caminho)}?$select=name,size,folder,file`,
@@ -238,6 +280,7 @@ export async function obterConteudo(
   caminho: string,
   formato?: 'pdf',
 ): Promise<Response> {
+  exigirDentroDaBase(cfg, caminho);
   const driveId = await obterDriveId(cfg);
   const consulta = formato ? `?format=${formato}` : '';
   return chamar(`/drives/${driveId}/root:/${caminhoGraph(caminho)}:/content${consulta}`);
@@ -245,6 +288,7 @@ export async function obterConteudo(
 
 /** Cria a pasta se faltar, nivel a nivel. Idempotente. */
 export async function garantirPasta(cfg: ConfigSharePoint, caminho: string): Promise<void> {
+  exigirDentroDaBase(cfg, caminho);
   const driveId = await obterDriveId(cfg);
   const segmentos = caminho.split('/').filter(Boolean);
 
@@ -298,6 +342,7 @@ export async function enviarArquivo(
   corpo: ReadableStream | ArrayBuffer | Uint8Array,
   tipo: string,
 ): Promise<string | null> {
+  exigirDentroDaBase(cfg, caminho);
   const driveId = await obterDriveId(cfg);
   const resposta = await chamar(
     `/drives/${driveId}/root:/${caminhoGraph(caminho)}:/content` +

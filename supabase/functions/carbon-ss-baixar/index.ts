@@ -20,7 +20,7 @@
 import { cabecalhosCors, tratarOptions, respostaErro } from '../_shared/cors.ts';
 import { extrairToken, verificarSessao, projetoAutorizado } from '../_shared/sessao.ts';
 import { carregarPermissoes } from '../_shared/permissoes.ts';
-import { lerConfigSharePoint } from '../_shared/config.ts';
+import { lerConfigSharePoint, caminhoNaBiblioteca } from '../_shared/config.ts';
 import { ErroGraph, obterConteudo, obterItem, temConfigAzure } from '../_shared/graph.ts';
 import { limparCaminho } from '../_shared/caminho.ts';
 import { marcarPdf } from '../_shared/marcaDagua.ts';
@@ -110,7 +110,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const cfg = await lerConfigSharePoint();
-    const completo = `${projeto.pasta}/${relativo}`;
+    const completo = caminhoNaBiblioteca(cfg, projeto.pasta, relativo);
 
     const item = await obterItem(cfg, completo);
     if (!item) return respostaErro('nao_encontrado', 404, METODOS);
