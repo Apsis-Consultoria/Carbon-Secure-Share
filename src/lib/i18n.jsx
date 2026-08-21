@@ -123,6 +123,20 @@ const TEXTOS = {
     'docs.rodapeMarca':
       'Documents opened here carry a watermark identifying who accessed them. They are confidential: do not redistribute them without authorisation from APSIS.',
 
+    /* Visualizador */
+    'visual.titulo': 'Preview',
+    'visual.arquivos': 'Files',
+    'visual.vazioTitulo': 'Select a file',
+    'visual.vazioTexto': 'Pick a file on the left and it opens here, without leaving the page.',
+    'visual.semPreviaTitulo': 'No preview for this format',
+    'visual.semPreviaTexto': 'This file type cannot be shown here. Download it to open on your computer.',
+    'visual.carregando': 'Opening the file',
+    'visual.erro': 'We could not show this file.',
+    'visual.abrirNovaAba': 'Open in a new tab',
+    'visual.soVisualizacao': 'View only. Downloading is not enabled for you.',
+    'visual.voltar': 'Back to the file list',
+    'visual.protegido': 'Watermarked with your identity',
+
     /* ZIP */
     'zip.montando': 'Building the ZIP for "{nome}"',
     'zip.preparando': 'Preparing...',
@@ -265,6 +279,19 @@ const TEXTOS = {
     'docs.baixarPastaItem': 'Baixar a pasta {nome} em ZIP',
     'docs.rodapeMarca':
       'Os documentos abertos aqui recebem uma marca d’água com a identificação de quem acessou. Eles são confidenciais: não redistribua sem autorização da APSIS.',
+
+    'visual.titulo': 'Visualização',
+    'visual.arquivos': 'Arquivos',
+    'visual.vazioTitulo': 'Selecione um arquivo',
+    'visual.vazioTexto': 'Escolha um arquivo à esquerda e ele abre aqui, sem sair da página.',
+    'visual.semPreviaTitulo': 'Sem visualização para este formato',
+    'visual.semPreviaTexto': 'Este tipo de arquivo não pode ser exibido aqui. Baixe para abrir no seu computador.',
+    'visual.carregando': 'Abrindo o arquivo',
+    'visual.erro': 'Não foi possível exibir este arquivo.',
+    'visual.abrirNovaAba': 'Abrir em outra aba',
+    'visual.soVisualizacao': 'Só visualização. O download não está liberado para você.',
+    'visual.voltar': 'Voltar à lista de arquivos',
+    'visual.protegido': 'Com marca d’água identificando você',
 
     'zip.montando': 'Montando o ZIP de "{nome}"',
     'zip.preparando': 'Preparando...',

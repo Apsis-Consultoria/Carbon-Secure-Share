@@ -90,6 +90,8 @@ function criarEstado() {
         { nome: 'Monitoring report 2025.pdf', tipo: 'arquivo', tamanho: 4215330, nivel: 'total' },
         { nome: 'Emissions worksheet.xlsx', tipo: 'arquivo', tamanho: 812004, nivel: 'total' },
         { nome: 'Draft valuation.pdf', tipo: 'arquivo', tamanho: 1204880, nivel: 'visualizar' },
+        { nome: 'Aerial view.png', tipo: 'arquivo', tamanho: 2280104, nivel: 'total' },
+        { nome: 'Field notes.txt', tipo: 'arquivo', tamanho: 4210, nivel: 'total' },
       ],
       'Project documents': [
         { nome: 'Attachments', tipo: 'pasta', tamanho: null, nivel: 'total' },
@@ -182,9 +184,39 @@ export async function demoArvore(projetoId, sub = '') {
  */
 export async function demoBaixar(projetoId, caminho) {
   await esperar(180);
+
+  const nome = caminho.split('/').pop() || 'file';
+  const ext = nome.split('.').pop().toLowerCase();
+
+  // Para os nomes de imagem devolvemos uma IMAGEM de verdade, e nao texto: sem
+  // isso o painel de visualizacao nao poderia ser revisado justamente no caso
+  // que ele existe para resolver. SVG serve porque o visualizador exibe imagem
+  // dentro de <img>, onde o navegador desliga script.
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'svg'].includes(ext)) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+  <defs>
+    <linearGradient id="ceu" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#CFE6D8"/><stop offset="1" stop-color="#F4F6F4"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="620" fill="url(#ceu)"/>
+  <path d="M0 430 L150 300 L300 430 Z" fill="#1A4731" opacity=".85"/>
+  <path d="M180 460 L360 270 L540 460 Z" fill="#245E40" opacity=".9"/>
+  <path d="M430 470 L640 300 L850 470 Z" fill="#1A4731" opacity=".8"/>
+  <rect y="460" width="900" height="160" fill="#0E241A"/>
+  <circle cx="740" cy="130" r="52" fill="#F48126" opacity=".9"/>
+  <text x="450" y="545" font-family="Segoe UI, sans-serif" font-size="26" font-weight="700"
+        fill="#FFFFFF" text-anchor="middle">${nome}</text>
+  <text x="450" y="580" font-family="Segoe UI, sans-serif" font-size="15"
+        fill="#9FBCAB" text-anchor="middle">Demonstration image - not a real document</text>
+</svg>`;
+    return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml' } });
+  }
+
   const corpo =
     `Secure Share Carbon - demonstration file\n\n` +
-    `Path: ${caminho}\n` +
+    `File:    ${nome}\n` +
+    `Path:    ${caminho}\n` +
     `Project: ${projetoId}\n\n` +
     `This is placeholder content. In production this response carries the real\n` +
     `bytes from SharePoint, and PDFs are watermarked with the identity of the\n` +

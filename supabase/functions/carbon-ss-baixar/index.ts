@@ -40,6 +40,38 @@ function extensao(nome: string): string {
   return (nome.split('.').pop() || '').toLowerCase();
 }
 
+/**
+ * Tipos que NAO podem ser servidos como si mesmos: eles executam script no
+ * navegador.
+ *
+ * POR QUE ISTO E CRITICO AQUI, e nao era antes: desde que o frontend passou a
+ * falar por /api/* (caminho relativo, resolvido por rewrite da hospedagem),
+ * esta resposta chega ao navegador na MESMA ORIGEM do portal. Antes ela vinha
+ * de <ref>.supabase.co, uma origem separada, e o isolamento era automatico.
+ *
+ * Com mesma origem, um arquivo .html enviado por um cliente e aberto no painel
+ * de visualizacao rodaria script COM ACESSO ao sessionStorage do portal, ou
+ * seja, ao token de sessao de quem o abriu. Um cliente conseguiria roubar a
+ * sessao de outra pessoa da mesma empresa apenas subindo um arquivo.
+ *
+ * A defesa e servir esses tipos como text/plain: o navegador mostra o codigo em
+ * vez de executa-lo. Junto com X-Content-Type-Options: nosniff, nao ha caminho
+ * de volta para text/html. O download (attachment) nao e afetado no conteudo,
+ * so no rotulo do tipo, e o arquivo salvo em disco continua identico.
+ *
+ * SVG entra na lista: <svg> aceita <script> e handlers de evento. Ele continua
+ * seguro dentro de <img>, que desliga script, e e assim que o frontend o exibe.
+ */
+const EXT_EXECUTAVEIS = new Set([
+  'html', 'htm', 'xhtml', 'shtml', 'svg', 'xml', 'xsl', 'xslt', 'mhtml', 'mht',
+]);
+
+function tipoPerigoso(ext: string, tipo: string): boolean {
+  if (EXT_EXECUTAVEIS.has(ext)) return true;
+  const t = tipo.toLowerCase();
+  return t.includes('text/html') || t.includes('xhtml') || t.includes('svg') || t.includes('xml');
+}
+
 /** Content-Disposition com nome compativel com acento (RFC 5987). */
 function disposicao(nome: string, inline: boolean): string {
   const ascii = nome.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
@@ -149,6 +181,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
 
+    // Tipo que executa script vira text/plain. Ver a nota de EXT_EXECUTAVEIS:
+    // esta resposta e servida na MESMA ORIGEM do portal, entao um .html de
+    // cliente aberto no visualizador leria o token de sessao de quem o abriu.
+    const tipoSeguro = tipoPerigoso(ext, tipo) ? 'text/plain; charset=utf-8' : tipo;
+
     // Demais arquivos: repasse em streaming, sem bufferizar.
     // Sem Content-Length de proposito: se a plataforma comprimir a resposta, o
     // valor herdado do upstream nao bateria com os bytes entregues e o navegador
@@ -156,8 +193,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return new Response(resposta.body, {
       headers: {
         ...base,
-        'Content-Type': tipo,
+        'Content-Type': tipoSeguro,
         'Content-Disposition': disposicao(nome, preview),
+        // Segunda camada, para o caso de um tipo perigoso que a lista nao
+        // preveja: proibe script, plugin e navegacao de topo a partir deste
+        // documento. Nao substitui o text/plain acima, reforca.
+        'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
       },
     });
   } catch (e) {

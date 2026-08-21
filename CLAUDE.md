@@ -69,6 +69,31 @@ entrando depois de a equipe ter revogado o acesso.
    o que é Edge Function, Graph ou SharePoint, e não pode fazer nada a respeito.
    Detalhe técnico vai para `console.error`, nunca para a resposta HTTP.
 
+## Regra 10: conteúdo de cliente NUNCA vira documento na nossa origem
+
+Desde que o frontend passou a falar por `/api/*` (rewrite da hospedagem), a
+resposta de `carbon-ss-baixar` chega ao navegador na **mesma origem** do portal.
+Antes vinha de `<ref>.supabase.co` e o isolamento era automático.
+
+Consequência: um arquivo `.html` enviado por um cliente e aberto num `<iframe>`
+rodaria script **com acesso ao `sessionStorage` do portal**, ou seja, ao token de
+sessão de quem o abriu. Um cliente roubaria a sessão de outra pessoa da mesma
+empresa só subindo um arquivo.
+
+Três camadas, e nenhuma sozinha basta:
+
+1. **Servidor** (`carbon-ss-baixar`): extensão ou content-type executável
+   (`html`, `svg`, `xml`, ...) é servido como `text/plain`, mais
+   `X-Content-Type-Options: nosniff` e `Content-Security-Policy` com `sandbox`;
+2. **Lista branca no visualizador** (`src/components/Visualizador.jsx`): só
+   imagem, PDF/Office e texto são exibidos. Formato fora da lista não vira
+   iframe, vira "sem prévia" com o botão de baixar;
+3. **`sandbox=""` no iframe**: sem `allow-same-origin`, o documento cai numa
+   origem opaca e não alcança o `sessionStorage` mesmo que escape das outras duas.
+
+Imagem vai em `<img>`, **nunca** em iframe: ali o navegador desliga script, o que
+torna seguro até um SVG malicioso.
+
 ## Armadilhas que NÃO devem ser replicadas
 
 - `index.html` precisa de `lang="pt-BR" translate="no"` e
