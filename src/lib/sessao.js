@@ -59,12 +59,14 @@ export function lerSessao() {
  * repetido aqui: duas fontes de verdade divergiriam na primeira vez que alguem
  * mudasse o TTL no servidor.
  */
-export function gravarSessao({ token, projetos, nome, email }) {
+export function gravarSessao({ token, projetos, nome, email, demo = false }) {
   const expiraEm = expiracaoDoToken(token);
   try {
     sessionStorage.setItem(
       CHAVE,
-      JSON.stringify({ token, projetos, nome, email, expiraEm }),
+      // `demo` marca a sessao de demonstracao. Em producao ele nunca chega a ser
+      // true: quem o liga e entrarDemo(), que so existe em desenvolvimento.
+      JSON.stringify({ token, projetos, nome, email, demo, expiraEm }),
     );
   } catch {
     // Sem storage a sessao vive so em memoria, no estado do React.

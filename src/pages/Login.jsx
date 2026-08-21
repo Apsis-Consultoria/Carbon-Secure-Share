@@ -1,9 +1,16 @@
 import { useState } from 'react';
-import { LogIn, Lock, Mail, TriangleAlert } from 'lucide-react';
+import { FlaskConical, LogIn, Lock, Mail, TriangleAlert } from 'lucide-react';
 
 import CarbonLoginLayout from '@/components/CarbonLoginLayout';
-import { entrar } from '@/lib/api';
+import SeletorIdioma from '@/components/SeletorIdioma';
+import { entrar, entrarDemo } from '@/lib/api';
+import { MODO_DEMO } from '@/lib/demo';
 import { gravarSessao } from '@/lib/sessao';
+import { useIdioma, textoDoErro } from '@/lib/i18n';
+
+// Mesma pilha de fontes do CarbonLoginLayout: Sora para titulo, no padrao dos
+// reports da APSIS.
+const SORA = "'Sora', 'Segoe UI', sans-serif";
 
 /**
  * Login do CLIENTE (e-mail e senha).
@@ -13,7 +20,11 @@ import { gravarSessao } from '@/lib/sessao';
  * segundo. O que muda e o miolo - la e um botao da Microsoft, aqui e um
  * formulario, porque o cliente nao tem conta no tenant.
  *
- * O erro exibido e SEMPRE o que o servidor mandou, e o servidor nao distingue
+ * O SELETOR DE IDIOMA FICA AQUI, e nao so depois de entrar: a interface nasce em
+ * ingles, e quem prefere portugues precisa poder trocar ANTES de ler o
+ * formulario, nao depois.
+ *
+ * O erro exibido e sempre o que o servidor mandou, e o servidor nao distingue
  * "e-mail nao existe" de "senha errada". Isso e deliberado: confirmar que um
  * e-mail tem cadastro ja diria que aquela pessoa e cliente da APSIS num projeto
  * de carbono, o que e informacao sobre o cliente e sobre o negocio.
@@ -23,6 +34,8 @@ import { gravarSessao } from '@/lib/sessao';
  * um link que nao existe.
  */
 export default function Login({ aoEntrar }) {
+  const { t } = useIdioma();
+
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState(null);
@@ -34,7 +47,7 @@ export default function Login({ aoEntrar }) {
 
     const alvo = email.trim().toLowerCase();
     if (!alvo || !senha) {
-      setErro('Informe o e-mail e a senha.');
+      setErro(t('login.camposObrigatorios'));
       return;
     }
 
@@ -56,7 +69,28 @@ export default function Login({ aoEntrar }) {
       setSenha('');
       aoEntrar(sessao);
     } catch (e) {
-      setErro(e.message);
+      setErro(textoDoErro(t, e));
+      setEnviando(false);
+    }
+  }
+
+  async function abrirDemonstracao() {
+    if (enviando) return;
+    setEnviando(true);
+    setErro(null);
+    try {
+      const dados = await entrarDemo();
+      const sessao = {
+        token: dados.token,
+        projetos: dados.projetos ?? [],
+        nome: dados.nome ?? '',
+        email: 'demo@example.com',
+        demo: true,
+      };
+      gravarSessao(sessao);
+      aoEntrar(sessao);
+    } catch (e) {
+      setErro(textoDoErro(t, e));
       setEnviando(false);
     }
   }
@@ -67,17 +101,45 @@ export default function Login({ aoEntrar }) {
     'focus:ring-[#F48126]/25 transition disabled:opacity-60';
 
   return (
-    <CarbonLoginLayout>
+    <CarbonLoginLayout
+      cantoSuperior={<SeletorIdioma variante="claro" />}
+      headline={t('login.headline')}
+      subheadline={t('login.subheadline')}
+      categories={[
+        t('login.categoria.projetos'),
+        t('login.categoria.contratos'),
+        t('login.categoria.gee'),
+        t('login.categoria.certificacao'),
+        t('login.categoria.esg'),
+      ]}
+      copyright={t('login.copyright')}
+    >
       <div className="w-full">
-        <h1 className="text-white text-lg font-semibold">Secure Share</h1>
-        <p className="text-white/70 text-sm mt-1 mb-6">
-          Entre com o e-mail e a senha que você recebeu da APSIS.
-        </p>
+        {/*
+          Titulo no MESMO padrao do login do secure_share: Sora, font-black,
+          tracking-tight, text-3xl / lg:text-4xl, caixa alta, centralizado, em
+          duas cores.
+
+          A UNICA divergencia e a cor da primeira palavra. La ela e o verde
+          #1A4731 sobre painel BRANCO; aqui o painel e verde, e o topo do
+          gradiente e rgba(26,71,49,.95) - exatamente o mesmo #1A4731. A palavra
+          sumiria no fundo. Trocamos por branco, que reproduz o par de cores do
+          logo logo acima (APSIS laranja + CARBON branco) e mantem a leitura.
+        */}
+        <h1
+          className="text-3xl lg:text-4xl font-black tracking-tight text-center"
+          style={{ fontFamily: SORA }}
+        >
+          <span className="text-white">SECURE</span>{' '}
+          <span style={{ color: '#F48126' }}>SHARE</span>
+        </h1>
+
+        <p className="text-white/70 text-sm text-center mt-2 mb-6">{t('login.chamada')}</p>
 
         <form onSubmit={submeter} className="space-y-3" noValidate>
           <div>
             <label htmlFor="ss-email" className="sr-only">
-              E-mail
+              {t('login.email')}
             </label>
             <div className="relative">
               <Mail
@@ -90,7 +152,7 @@ export default function Login({ aoEntrar }) {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu.email@empresa.com"
+                placeholder={t('login.emailPlaceholder')}
                 autoComplete="username"
                 disabled={enviando}
                 className={campo}
@@ -100,7 +162,7 @@ export default function Login({ aoEntrar }) {
 
           <div>
             <label htmlFor="ss-senha" className="sr-only">
-              Senha
+              {t('login.senha')}
             </label>
             <div className="relative">
               <Lock
@@ -113,7 +175,7 @@ export default function Login({ aoEntrar }) {
                 type="password"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
-                placeholder="Senha"
+                placeholder={t('login.senhaPlaceholder')}
                 autoComplete="current-password"
                 disabled={enviando}
                 className={campo}
@@ -139,14 +201,36 @@ export default function Login({ aoEntrar }) {
               disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <LogIn size={16} aria-hidden="true" />
-            {enviando ? 'Entrando...' : 'Entrar'}
+            {enviando ? t('login.entrando') : t('login.entrar')}
           </button>
         </form>
 
-        <p className="text-white/45 text-[11px] leading-relaxed mt-5">
-          Esqueceu a senha ou não recebeu o acesso? Fale com a pessoa da APSIS
-          responsável pelo seu projeto: é ela que emite uma nova.
-        </p>
+        {/*
+          Botao de demonstracao. O ramo inteiro SOME do build de producao:
+          MODO_DEMO e import.meta.env.DEV, que o Vite substitui por false, e o
+          Rollup elimina o bloco junto com o modulo src/lib/demo.js. Nao e um
+          botao escondido - ele nao existe no bundle publicado.
+        */}
+        {MODO_DEMO && (
+          <div className="mt-5 pt-5 border-t border-white/10">
+            <button
+              type="button"
+              disabled={enviando}
+              onClick={abrirDemonstracao}
+              className="w-full flex items-center justify-center gap-2 rounded-xl border border-white/25
+                bg-white/5 px-4 py-2.5 text-sm font-medium text-white/90 transition
+                hover:bg-white/10 disabled:opacity-60"
+            >
+              <FlaskConical size={15} aria-hidden="true" />
+              {t('demo.entrar')}
+            </button>
+            <p className="text-white/40 text-[11px] leading-relaxed mt-2 text-center">
+              {t('demo.explica')}
+            </p>
+          </div>
+        )}
+
+        <p className="text-white/45 text-[11px] leading-relaxed mt-5">{t('login.semAcesso')}</p>
       </div>
     </CarbonLoginLayout>
   );

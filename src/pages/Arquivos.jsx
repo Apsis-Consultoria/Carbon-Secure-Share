@@ -4,11 +4,14 @@ import { toast } from 'sonner';
 import {
   Folder, ChevronRight, ChevronDown, Download, Eye, Loader2, RefreshCw, LogOut,
   KeyRound, UploadCloud, X, FileText, FileSpreadsheet, Image as IconeImagem,
-  File as IconeArquivo, FolderArchive, Lock, Inbox,
+  File as IconeArquivo, FolderArchive, Lock, Inbox, FlaskConical,
 } from 'lucide-react';
 
-import { listar, enviar, urlArquivo } from '@/lib/api';
+import { listar, enviar, urlArquivo, baixarBytes } from '@/lib/api';
 import { baixarPastaZip } from '@/lib/pastaZip';
+import { MODO_DEMO } from '@/lib/demo';
+import { useIdioma, textoDoErro } from '@/lib/i18n';
+import SeletorIdioma from '@/components/SeletorIdioma';
 import Cartao from '@/components/ui/Cartao';
 import Badge from '@/components/ui/Badge';
 import Carregando from '@/components/ui/Carregando';
@@ -20,12 +23,23 @@ import BotaoSecundario from '@/components/ui/BotaoSecundario';
 
 /* ===== Apoio ============================================================== */
 
-function tamanhoLegivel(bytes) {
+/**
+ * Tamanho legivel. O separador decimal acompanha o idioma: em ingles "4.0 MB",
+ * em portugues "4,0 MB". Numero formatado no idioma errado e o tipo de detalhe
+ * que faz a traducao parecer inacabada.
+ */
+function tamanhoLegivel(bytes, idioma) {
   if (bytes === null || bytes === undefined) return '';
+  const local = idioma === 'pt' ? 'pt-BR' : 'en-US';
+  const fmt = (n, casas) => n.toLocaleString(local, {
+    minimumFractionDigits: casas,
+    maximumFractionDigits: casas,
+  });
+
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (bytes < 1024 * 1024) return `${fmt(bytes / 1024, 1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${fmt(bytes / (1024 * 1024), 1)} MB`;
+  return `${fmt(bytes / (1024 * 1024 * 1024), 2)} GB`;
 }
 
 function IconeDoArquivo({ nome }) {
@@ -55,6 +69,8 @@ function podeVisualizar(nome) {
 /* ===== Tela =============================================================== */
 
 export default function Arquivos({ sessao, aoSair }) {
+  const { t, idioma } = useIdioma();
+
   const projetos = sessao.projetos ?? [];
   const [projetoId, setProjetoId] = useState(projetos[0]?.projeto_id ?? '');
   const projeto = projetos.find((p) => p.projeto_id === projetoId) ?? projetos[0];
@@ -79,11 +95,11 @@ export default function Arquivos({ sessao, aoSair }) {
       const r = await listar(projetoId, '');
       setRaiz(r.itens ?? []);
     } catch (e) {
-      setErro(e.message);
+      setErro(textoDoErro(t, e));
     } finally {
       setCarregando(false);
     }
-  }, [projetoId]);
+  }, [projetoId, t]);
 
   useEffect(() => { carregarRaiz(); }, [carregarRaiz]);
 
@@ -100,8 +116,8 @@ export default function Arquivos({ sessao, aoSair }) {
       const r = await listar(projetoId, caminho);
       setConteudo((a) => ({ ...a, [caminho]: r.itens ?? [] }));
     } catch (e) {
-      toast.error(`Não foi possível abrir "${caminho.split('/').pop()}"`, {
-        description: e.message,
+      toast.error(t('pasta.naoAbriu', { nome: caminho.split('/').pop() }), {
+        description: textoDoErro(t, e),
       });
       setAbertas((a) => { const n = new Set(a); n.delete(caminho); return n; });
     } finally {
@@ -128,31 +144,67 @@ export default function Arquivos({ sessao, aoSair }) {
       );
 
       if (controlador.signal.aborted) {
-        toast.info('Download cancelado.');
+        toast.info(t('zip.cancelado'));
       } else if (r.total === 0) {
-        toast.info('Não há arquivos para baixar nesta pasta.', {
+        toast.info(t('zip.semArquivos'), {
           description: r.ignorados
-            ? `${r.ignorados} arquivo(s) são somente para visualização e não entram no ZIP.`
+            ? t('zip.somenteVisualizacao', { n: r.ignorados })
             : undefined,
         });
       } else {
         // Nunca deixamos a ausência silenciosa: quem baixou precisa saber que o
         // ZIP não tem tudo que aparece na tela.
         const partes = [];
-        if (r.ignorados) partes.push(`${r.ignorados} ficaram de fora (somente visualização)`);
-        if (r.truncado) partes.push('a pasta é grande demais e o ZIP foi limitado');
-        toast.success(`${r.total} arquivo(s) no ZIP.`, {
-          description: partes.length ? partes.join('. ') + '.' : undefined,
+        if (r.ignorados) partes.push(t('zip.foraSoVisualizar', { n: r.ignorados }));
+        if (r.truncado) partes.push(t('zip.truncado'));
+        toast.success(t('zip.pronto', { n: r.total }), {
+          description: partes.length ? `${partes.join('. ')}.` : undefined,
           duration: partes.length ? 12000 : 5000,
         });
       }
     } catch (e) {
-      toast.error('Não foi possível montar o ZIP.', { description: e.message });
+      toast.error(t('zip.falhou'), { description: textoDoErro(t, e) });
     } finally {
       abortarZip.current = null;
       setZip(null);
     }
   }
+
+  /* ---- Abrir arquivo no modo demonstracao -------------------------------- */
+
+  /**
+   * Em demonstracao nao existe backend, entao o href real (/api/carbon-ss-baixar)
+   * daria 404 e o botao pareceria quebrado. Aqui montamos um blob com o conteudo
+   * ficticio e entregamos por ele, para o fluxo de abrir e baixar poder ser
+   * revisado de ponta a ponta.
+   */
+  async function abrirNoDemo(caminho, nome, modo) {
+    try {
+      const resposta = await baixarBytes(projetoId, caminho);
+      const blob = await resposta.blob();
+      const url = URL.createObjectURL(blob);
+
+      if (modo === 'preview') {
+        window.open(url, '_blank', 'noopener');
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        // .txt porque o conteudo e texto: baixar como .pdf um arquivo que nao e
+        // PDF faria o leitor de PDF acusar corrupcao e parecer defeito nosso.
+        link.download = `${nome}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast.info(t('demo.arquivoAviso'));
+    } catch (e) {
+      toast.error(textoDoErro(t, e));
+    }
+  }
+
+  const emDemo = MODO_DEMO && sessao.demo;
 
   /* ---- Árvore ------------------------------------------------------------ */
 
@@ -191,8 +243,8 @@ export default function Arquivos({ sessao, aoSair }) {
             <BotaoSecundario
               icone={FolderArchive}
               tamanho="sm"
-              titulo="Baixar esta pasta em ZIP"
-              rotuloAcessivel={`Baixar a pasta ${item.nome} em ZIP`}
+              titulo={t('docs.baixarPasta')}
+              rotuloAcessivel={t('docs.baixarPastaItem', { nome: item.nome })}
               desabilitado={Boolean(zip)}
               onClick={() => baixarPasta(caminho, item.nome)}
             />
@@ -208,7 +260,7 @@ export default function Arquivos({ sessao, aoSair }) {
                     style={{ paddingLeft: `${recuo + 36}px` }}
                     className="py-2 px-3 text-xs text-[#8A9990] italic border-b border-[#F4F6F4]"
                   >
-                    Pasta vazia
+                    {t('docs.pastaVazia')}
                   </li>,
                 ]
               : linhas(filhos, profundidade + 1, caminho)
@@ -228,23 +280,24 @@ export default function Arquivos({ sessao, aoSair }) {
 
           <div className="flex-1 min-w-0">
             <p className="text-sm text-[#1A2B1F] truncate">{item.nome}</p>
-            <p className="text-[11px] text-[#8A9990]">{tamanhoLegivel(item.tamanho)}</p>
+            <p className="text-[11px] text-[#8A9990]">{tamanhoLegivel(item.tamanho, idioma)}</p>
           </div>
 
           {soVer && (
             <Badge tom="azul" tamanho="sm" icone={Lock}>
-              Só visualizar
+              {t('docs.soVisualizar')}
             </Badge>
           )}
 
           {podeVisualizar(item.nome) && (
             <BotaoSecundario
-              como="externo"
-              href={urlArquivo(projetoId, caminho, 'preview')}
+              {...(emDemo
+                ? { onClick: () => abrirNoDemo(caminho, item.nome, 'preview') }
+                : { como: 'externo', href: urlArquivo(projetoId, caminho, 'preview') })}
               icone={Eye}
               tamanho="sm"
-              titulo="Abrir em outra aba"
-              rotuloAcessivel={`Visualizar ${item.nome}`}
+              titulo={t('docs.visualizar')}
+              rotuloAcessivel={t('docs.visualizarItem', { nome: item.nome })}
             />
           )}
 
@@ -253,12 +306,13 @@ export default function Arquivos({ sessao, aoSair }) {
               do que não oferecer. */}
           {!soVer && (
             <BotaoSecundario
-              como="externo"
-              href={urlArquivo(projetoId, caminho, 'download')}
+              {...(emDemo
+                ? { onClick: () => abrirNoDemo(caminho, item.nome, 'download') }
+                : { como: 'externo', href: urlArquivo(projetoId, caminho, 'download') })}
               icone={Download}
               tamanho="sm"
-              titulo="Baixar"
-              rotuloAcessivel={`Baixar ${item.nome}`}
+              titulo={t('docs.baixar')}
+              rotuloAcessivel={t('docs.baixarItem', { nome: item.nome })}
             />
           )}
         </li>,
@@ -280,18 +334,20 @@ export default function Arquivos({ sessao, aoSair }) {
           />
 
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold truncate">Secure Share</p>
+            <p className="text-sm font-semibold truncate">{t('app.nome')}</p>
             <p className="text-[11px] text-white/70 truncate">
               {sessao.nome ? `${sessao.nome} · ` : ''}{sessao.email}
             </p>
           </div>
+
+          <SeletorIdioma variante="escuro" />
 
           <Link
             to="/senha"
             className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg
               border border-white/25 hover:bg-white/10 transition"
           >
-            <KeyRound size={13} /> Trocar senha
+            <KeyRound size={13} /> {t('nav.trocarSenha')}
           </Link>
 
           <button
@@ -300,10 +356,22 @@ export default function Arquivos({ sessao, aoSair }) {
             className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg
               border border-white/25 hover:bg-white/10 transition"
           >
-            <LogOut size={13} /> Sair
+            <LogOut size={13} /> {t('nav.sair')}
           </button>
         </div>
       </header>
+
+      {/* Faixa de demonstracao. Fica no topo, larga e amarela, de proposito: sem
+          ela e facil olhar a tela e achar que os documentos sao reais. Some do
+          build de producao junto com o resto do modo demonstracao. */}
+      {MODO_DEMO && sessao.demo && (
+        <div className="bg-[#FDF3E3] border-b border-[#F2DDB4]">
+          <p className="max-w-4xl mx-auto px-4 py-2 text-[12px] text-[#8A5A12] flex items-center gap-2">
+            <FlaskConical size={14} className="shrink-0" aria-hidden="true" />
+            {t('demo.faixa')}
+          </p>
+        </div>
+      )}
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
         {/* Seletor de projeto: só aparece com mais de um. A mesma pessoa pode
@@ -328,24 +396,25 @@ export default function Arquivos({ sessao, aoSair }) {
         )}
 
         {zip && (
-          <Cartao icone={FolderArchive} titulo={`Montando o ZIP de "${zip.rotulo}"`} tomIcone="laranja">
+          <Cartao
+            icone={FolderArchive}
+            titulo={t('zip.montando', { nome: zip.rotulo })}
+            tomIcone="laranja"
+          >
             <BarraProgresso
               valor={zip.total ? (zip.feitos / zip.total) * 100 : 0}
-              rotulo={zip.arquivo || 'Preparando...'}
+              rotulo={zip.arquivo || t('zip.preparando')}
               detalhe={zip.total ? `${zip.feitos}/${zip.total}` : ''}
               mostrarValor
             />
-            <p className="text-[11px] text-[#8A9990] mt-2">
-              O arquivo é montado no seu navegador, um documento por vez. Mantenha esta aba
-              aberta até terminar.
-            </p>
+            <p className="text-[11px] text-[#8A9990] mt-2">{t('zip.aviso')}</p>
             <BotaoSecundario
               variante="perigo"
               tamanho="sm"
               className="mt-3"
               onClick={() => abortarZip.current?.abort()}
             >
-              Cancelar
+              {t('zip.cancelar')}
             </BotaoSecundario>
           </Cartao>
         )}
@@ -354,8 +423,8 @@ export default function Arquivos({ sessao, aoSair }) {
 
         <Cartao
           icone={Folder}
-          titulo={projeto?.empresa ?? 'Documentos'}
-          subtitulo={projeto?.ap_os ? `AP/OS ${projeto.ap_os}` : 'Documentos compartilhados com você'}
+          titulo={projeto?.empresa ?? t('docs.titulo')}
+          subtitulo={projeto?.ap_os ? t('docs.apOs', { ap_os: projeto.ap_os }) : t('docs.subtitulo')}
           semPaddingCorpo
           acao={
             <div className="flex items-center gap-2">
@@ -363,25 +432,25 @@ export default function Arquivos({ sessao, aoSair }) {
                 icone={FolderArchive}
                 tamanho="sm"
                 desabilitado={Boolean(zip) || !raiz?.length}
-                onClick={() => baixarPasta('', projeto?.empresa ?? 'documentos')}
+                onClick={() => baixarPasta('', projeto?.empresa ?? 'documents')}
               >
-                Baixar tudo
+                {t('docs.baixarTudo')}
               </BotaoSecundario>
               <BotaoSecundario
                 icone={RefreshCw}
                 tamanho="sm"
                 carregando={carregando}
                 onClick={carregarRaiz}
-                rotuloAcessivel="Atualizar a lista de arquivos"
+                rotuloAcessivel={t('docs.atualizar')}
               />
             </div>
           }
         >
           {carregando ? (
-            <div className="p-8"><Carregando rotulo="Carregando os documentos" /></div>
+            <div className="p-8"><Carregando rotulo={t('docs.carregando')} /></div>
           ) : erro ? (
             <div className="p-5">
-              <AvisoDiscreto tom="vermelho" titulo="Não foi possível abrir os documentos.">
+              <AvisoDiscreto tom="vermelho" titulo={t('docs.erro')}>
                 {erro}
               </AvisoDiscreto>
             </div>
@@ -390,8 +459,8 @@ export default function Arquivos({ sessao, aoSair }) {
               <EstadoVazio
                 compacto
                 icone={Inbox}
-                titulo="Ainda não há documentos"
-                texto="Quando a equipe da APSIS enviar os arquivos deste projeto, eles aparecem aqui. Você recebe um aviso por e-mail."
+                titulo={t('docs.vazioTitulo')}
+                texto={t('docs.vazioTexto')}
               />
             </div>
           ) : (
@@ -400,8 +469,7 @@ export default function Arquivos({ sessao, aoSair }) {
         </Cartao>
 
         <p className="text-[11px] text-[#8A9990] text-center leading-relaxed pb-4">
-          Os documentos abertos aqui recebem uma marca d&apos;água com a identificação de
-          quem acessou. Eles são confidenciais: não redistribua sem autorização da APSIS.
+          {t('docs.rodapeMarca')}
         </p>
       </main>
     </div>
@@ -411,6 +479,8 @@ export default function Arquivos({ sessao, aoSair }) {
 /* ===== Envio pelo cliente ================================================= */
 
 function Envio({ projetoId, aoTerminar }) {
+  const { t, idioma } = useIdioma();
+
   const [fila, setFila] = useState([]);
   const [arrastando, setArrastando] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -437,16 +507,19 @@ function Envio({ projetoId, aoTerminar }) {
       setFila([]);
 
       if (r.falhas?.length) {
-        toast.warning(`${r.enviados.length} enviado(s), ${r.falhas.length} com falha.`, {
-          description: r.falhas.map((f) => `${f.arquivo}: ${f.motivo}`).join(' | '),
-          duration: 12000,
-        });
+        toast.warning(
+          t('envio.parcial', { enviados: r.enviados.length, falhas: r.falhas.length }),
+          {
+            description: r.falhas.map((f) => `${f.arquivo}: ${f.motivo}`).join(' | '),
+            duration: 12000,
+          },
+        );
       } else {
-        toast.success(`${r.enviados.length} arquivo(s) enviado(s) para a APSIS.`);
+        toast.success(t('envio.sucesso', { n: r.enviados.length }));
       }
       aoTerminar?.();
     } catch (e) {
-      toast.error('Não foi possível enviar.', { description: e.message });
+      toast.error(t('envio.falhou'), { description: textoDoErro(t, e) });
     } finally {
       setEnviando(false);
     }
@@ -455,8 +528,8 @@ function Envio({ projetoId, aoTerminar }) {
   return (
     <Cartao
       icone={UploadCloud}
-      titulo="Enviar arquivos para a APSIS"
-      subtitulo="Eles chegam numa pasta separada, identificada como enviada por você."
+      titulo={t('envio.titulo')}
+      subtitulo={t('envio.subtitulo')}
       tomIcone="laranja"
     >
       <div className="space-y-3">
@@ -479,7 +552,7 @@ function Envio({ projetoId, aoTerminar }) {
         >
           <UploadCloud size={26} className={arrastando ? 'text-[#1A4731]' : 'text-[#8A9990]'} />
           <p className="text-sm text-[#1A2B1F] font-medium">
-            {arrastando ? 'Solte aqui' : 'Arraste arquivos ou clique para selecionar'}
+            {arrastando ? t('envio.solte') : t('envio.arraste')}
           </p>
           <input
             ref={refInput}
@@ -504,13 +577,15 @@ function Envio({ projetoId, aoTerminar }) {
                   <IconeDoArquivo nome={arquivo.name} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-[#1A2B1F] truncate">{arquivo.name}</p>
-                    <p className="text-[11px] text-[#8A9990]">{tamanhoLegivel(arquivo.size)}</p>
+                    <p className="text-[11px] text-[#8A9990]">
+                      {tamanhoLegivel(arquivo.size, idioma)}
+                    </p>
                   </div>
                   <BotaoSecundario
                     variante="fantasma"
                     icone={X}
                     tamanho="sm"
-                    rotuloAcessivel={`Tirar ${arquivo.name} da fila`}
+                    rotuloAcessivel={t('envio.remover', { nome: arquivo.name })}
                     onClick={() => setFila((a) => a.filter((_, j) => j !== i))}
                   />
                 </li>
@@ -523,7 +598,7 @@ function Envio({ projetoId, aoTerminar }) {
               carregando={enviando}
               onClick={despachar}
             >
-              Enviar {fila.length} arquivo{fila.length > 1 ? 's' : ''}
+              {t('envio.enviar', { n: fila.length })}
             </BotaoPrimario>
           </>
         )}

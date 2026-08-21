@@ -1,4 +1,13 @@
 import { caminhoFuncao } from '@/lib/endpoint';
+import {
+  MODO_DEMO,
+  demoArvore,
+  demoBaixar,
+  demoEntrar,
+  demoEnviar,
+  demoListar,
+  demoTrocarSenha,
+} from '@/lib/demo';
 import { lerSessao, limparSessao } from '@/lib/sessao';
 
 /**
@@ -7,60 +16,30 @@ import { lerSessao, limparSessao } from '@/lib/sessao';
  * Uma funcao por operacao, todas com o token de sessao no Authorization. Nenhuma
  * fala com o banco: quem confere a permissao por item e o servidor, a cada
  * requisicao.
+ *
+ * ESTE MODULO NAO TEM TEXTO DE INTERFACE. Ele lanca ErroApi carregando o CODIGO
+ * do erro, e quem traduz e a tela, por textoDoErro() de src/lib/i18n.jsx.
+ *
+ * Por que assim: a interface tem dois idiomas (ingles por padrao, portugues por
+ * escolha). Se a mensagem fosse formada aqui, ela nasceria no idioma vigente no
+ * instante da falha e NAO mudaria quando a pessoa trocasse o seletor - um erro
+ * em ingles ficaria preso na tela em portugues. Alem disso, este arquivo nao e
+ * um componente e nao pode usar o hook do React que conhece o idioma.
+ *
+ * A `message` do ErroApi existe so para log e para o console. Nunca a mostre ao
+ * cliente: use textoDoErro(t, erro).
  */
 
 const TIMEOUT_MS = 20000;
 
 export class ErroApi extends Error {
-  constructor(mensagem, { codigo = null, status = null, detalhe = null } = {}) {
-    super(mensagem);
+  constructor(codigo, { status = null, detalhe = null, mensagem = null } = {}) {
+    super(mensagem || codigo || 'erro_api');
     this.name = 'ErroApi';
     this.codigo = codigo;
     this.status = status;
     this.detalhe = detalhe;
   }
-}
-
-/**
- * Texto de interface para cada codigo do contrato.
- *
- * Escritos para um LEITOR EXTERNO. Ele nao sabe o que e Edge Function, Graph nem
- * SharePoint, e nao pode fazer nada a respeito: a mensagem diz o que aconteceu e
- * a quem recorrer, sem termo interno.
- */
-const MENSAGENS = {
-  credenciais_obrigatorias: 'Informe o e-mail e a senha.',
-  credenciais_invalidas: 'E-mail ou senha incorretos.',
-  muitas_tentativas:
-    'Muitas tentativas seguidas. Aguarde alguns minutos antes de tentar de novo.',
-  nao_autenticado: 'Sua sessão expirou. Entre novamente.',
-  sem_acesso_ao_projeto: 'Você não tem acesso a este projeto.',
-  sem_acesso_ao_arquivo: 'Você não tem acesso a este arquivo.',
-  somente_visualizacao:
-    'Este arquivo é somente para visualização. O download não está liberado para você.',
-  nao_encontrado: 'O arquivo não foi encontrado. Ele pode ter sido movido ou removido.',
-  item_e_pasta: 'O item pedido é uma pasta.',
-  caminho_obrigatorio: 'Arquivo não informado.',
-  previa_indisponivel:
-    'Não foi possível gerar a visualização deste arquivo. Baixe o arquivo para abrir.',
-  armazenamento_indisponivel:
-    'O sistema está temporariamente indisponível. Tente novamente em alguns minutos.',
-  sharepoint_falhou: 'O sistema não conseguiu acessar os arquivos agora. Tente novamente.',
-  falha_ao_buscar: 'Não foi possível baixar o arquivo agora. Tente novamente.',
-  arquivo_obrigatorio: 'Selecione ao menos um arquivo.',
-  arquivos_demais: 'Muitos arquivos de uma vez. Envie em lotes menores.',
-  campos_obrigatorios: 'Preencha todos os campos.',
-  senha_curta: 'A nova senha precisa de pelo menos 12 caracteres.',
-  senha_igual_a_atual: 'A nova senha precisa ser diferente da atual.',
-  senha_atual_incorreta: 'A senha atual está incorreta.',
-  erro_interno: 'Algo deu errado do nosso lado. Tente novamente em alguns instantes.',
-};
-
-function mensagem(codigo, status) {
-  if (MENSAGENS[codigo]) return MENSAGENS[codigo];
-  if (status === 401) return MENSAGENS.nao_autenticado;
-  if (status === 403) return 'Você não tem permissão para esta ação.';
-  return MENSAGENS.erro_interno;
 }
 
 /**
@@ -123,13 +102,9 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
     });
   } catch (e) {
     if (e?.name === 'AbortError') {
-      throw new ErroApi('A operação demorou demais. Verifique a conexão e tente de novo.', {
-        codigo: 'timeout',
-      });
+      throw new ErroApi('timeout');
     }
-    throw new ErroApi('Não foi possível falar com o servidor. Verifique a conexão.', {
-      codigo: 'falha_rede',
-    });
+    throw new ErroApi('falha_rede');
   } finally {
     clearTimeout(timer);
   }
@@ -151,10 +126,7 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
         'Producao: Amplify > App settings > Rewrites and redirects, antes do catch-all da SPA. ' +
         'Desenvolvimento: defina SUPABASE_FUNCTIONS_URL no ambiente do Vite.',
     );
-    throw new ErroApi(
-      'O sistema não está configurado corretamente. Avise a pessoa da APSIS responsável pelo seu projeto.',
-      { codigo: 'proxy_nao_configurado', status: resposta.status },
-    );
+    throw new ErroApi('proxy_nao_configurado', { status: resposta.status });
   }
 
   // 207 = envio parcial. Nao e erro: quem chamou precisa da lista do que subiu.
@@ -162,8 +134,7 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
     // Sessao invalida: limpamos aqui para a proxima renderizacao cair no login,
     // em vez de a tela ficar tentando com um token morto.
     if (resposta.status === 401) limparSessao();
-    throw new ErroApi(mensagem(dados?.erro, resposta.status), {
-      codigo: dados?.erro ?? null,
+    throw new ErroApi(dados?.erro ?? null, {
       status: resposta.status,
       detalhe: dados?.detalhe ?? null,
     });
@@ -172,7 +143,40 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
   return { status: resposta.status, dados };
 }
 
+/* ===== Modo demonstracao ================================================== */
+
+/**
+ * O modo demonstracao esta ATIVO nesta sessao?
+ *
+ * Duas condicoes, e as duas importam:
+ *
+ *   MODO_DEMO         constante de build (import.meta.env.DEV). Em producao ela
+ *                     e false, o `&&` curto-circuita e o Rollup remove tanto a
+ *                     chamada quanto o modulo src/lib/demo.js do bundle;
+ *   sessao.demo       ligado apenas por entrarDemo(). Sem ele, uma sessao de
+ *                     desenvolvimento contra um Supabase de verdade continuaria
+ *                     chamando a rede, que e o que se quer ao testar de fato.
+ *
+ * E funcao, e nao constante, porque a segunda condicao muda em tempo de
+ * execucao: a pessoa entra em demonstracao, sai, e entra de novo com credencial.
+ */
+function MODO_DEMO_ATIVO() {
+  return MODO_DEMO && lerSessao()?.demo === true;
+}
+
 /* ===== Sessao ============================================================= */
+
+/**
+ * Entra em modo demonstracao. So existe em desenvolvimento.
+ *
+ * Devolve a mesma forma que entrar(), mais `demo: true`, que e o que faz as
+ * demais chamadas desta camada usarem o dataset ficticio.
+ */
+export async function entrarDemo() {
+  if (!MODO_DEMO) throw new ErroApi('demo_indisponivel');
+  const dados = await demoEntrar();
+  return { ...dados, demo: true };
+}
 
 /** POST carbon-ss-login -> { token, projetos, nome } */
 export async function entrar(email, senha) {
@@ -186,6 +190,7 @@ export async function entrar(email, senha) {
 
 /** POST carbon-ss-senha -> { trocada: true } */
 export async function trocarSenha(senhaAtual, senhaNova) {
+  if (MODO_DEMO_ATIVO()) return demoTrocarSenha();
   const { dados } = await chamar('carbon-ss-senha', {
     metodo: 'POST',
     corpo: { senha_atual: senhaAtual, senha_nova: senhaNova },
@@ -197,6 +202,7 @@ export async function trocarSenha(senhaAtual, senhaNova) {
 
 /** GET carbon-ss-listar -> { itens, caminho }. Um nível por chamada. */
 export async function listar(projetoId, sub = '') {
+  if (MODO_DEMO_ATIVO()) return demoListar(projetoId, sub);
   const { dados } = await chamar('carbon-ss-listar', {
     consulta: { projeto_id: projetoId, sub },
   });
@@ -205,6 +211,7 @@ export async function listar(projetoId, sub = '') {
 
 /** GET carbon-ss-arvore -> { arquivos, total, bytes, ignorados, truncado } */
 export async function arvore(projetoId, sub = '') {
+  if (MODO_DEMO_ATIVO()) return demoArvore(projetoId, sub);
   const { dados } = await chamar('carbon-ss-arvore', {
     consulta: { projeto_id: projetoId, sub },
   });
@@ -232,12 +239,13 @@ export function urlArquivo(projetoId, caminho, modo = 'download') {
 
 /** Bytes de um arquivo, para montar o ZIP no navegador. */
 export async function baixarBytes(projetoId, caminho, signal) {
+  if (MODO_DEMO_ATIVO()) return demoBaixar(projetoId, caminho);
   const resposta = await fetch(urlArquivo(projetoId, caminho, 'download'), {
     headers: cabecalhos(),
     signal,
   });
   if (!resposta.ok) {
-    throw new ErroApi(mensagem(null, resposta.status), { status: resposta.status });
+    throw new ErroApi(null, { status: resposta.status });
   }
   return resposta;
 }
@@ -249,6 +257,7 @@ export async function baixarBytes(projetoId, caminho, signal) {
  * Sem o timeout padrao: um envio grande passa de 20 segundos com folga.
  */
 export async function enviar(projetoId, itens, { signal } = {}) {
+  if (MODO_DEMO_ATIVO()) return demoEnviar(projetoId, itens);
   const formulario = new FormData();
   formulario.append('projeto_id', projetoId);
   for (const { arquivo, subPath } of itens) {
@@ -265,19 +274,14 @@ export async function enviar(projetoId, itens, { signal } = {}) {
       signal,
     });
   } catch {
-    throw new ErroApi('Não foi possível enviar agora. Verifique a conexão.', {
-      codigo: 'falha_rede',
-    });
+    throw new ErroApi('falha_rede');
   }
 
   const dados = await resposta.json().catch(() => null);
 
   if (!resposta.ok && resposta.status !== 207) {
     if (resposta.status === 401) limparSessao();
-    throw new ErroApi(mensagem(dados?.erro, resposta.status), {
-      codigo: dados?.erro ?? null,
-      status: resposta.status,
-    });
+    throw new ErroApi(dados?.erro ?? null, { status: resposta.status });
   }
 
   return { status: resposta.status, ...(dados ?? {}) };

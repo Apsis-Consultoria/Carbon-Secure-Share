@@ -14,7 +14,18 @@
   cliente, em maquina que a APSIS nao administra, com as extensoes e as
   preferencias de traducao que ele tiver.
 -->
-<html lang="pt-BR" translate="no">
+<!--
+  lang="en" porque a interface NASCE em ingles: quem abre esta tela e um cliente
+  externo (comprador de credito, auditor de VVB, verificador do Verra), e boa
+  parte deles nao fala portugues. O ProvedorIdioma de src/lib/i18n.jsx troca
+  este atributo para pt-BR quando a pessoa escolhe portugues no seletor.
+
+  O translate="no" permanece nos DOIS idiomas: ele bloqueia o Google Tradutor, e
+  o motivo esta no comentario acima. O seletor de idioma da pagina e a nossa
+  traducao, com dicionario proprio, justamente porque o tradutor do navegador
+  nao pode ser usado aqui.
+-->
+<html lang="en" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="google" content="notranslate" />

@@ -137,14 +137,25 @@ function useMovimentoReduzido() {
   return reduzido;
 }
 
+/**
+ * Os textos padrao estao em INGLES porque a interface deste portal nasce em
+ * ingles (ver src/lib/i18n.jsx). Na pratica o Login.jsx sempre passa os textos
+ * traduzidos e estes defaults nao aparecem; eles existem para que renderizar o
+ * layout sem props nao produza portugues no meio de uma tela em ingles.
+ *
+ * `cantoSuperior` e um slot para o seletor de idioma. Ele fica FORA do bloco de
+ * login, no canto do painel: colado no titulo ele competia com a marca e
+ * espremia a chamada, que foi a reclamacao do dono.
+ */
 export default function CarbonLoginLayout({
   children,
+  cantoSuperior = null,
   logoSrc = "/login/logo-apsis-carbon.png",
   backgrounds = BACKGROUNDS_DEFAULT,
-  headline = "A APSIS leva para o mercado de carbono o mesmo rigor técnico de mais de três décadas em avaliações.",
-  subheadline = "Estruturação, mensuração e validação de projetos de carbono.",
+  headline = "APSIS brings to the carbon market the same technical rigour of more than three decades in valuation.",
+  subheadline = "Structuring, measurement and validation of carbon projects.",
   categories = CATEGORIAS_DEFAULT,
-  copyright = "© 2026 APSIS Consultoria. Todos os direitos reservados.",
+  copyright = "© 2026 APSIS Consultoria. All rights reserved.",
 }) {
   const imgs = backgrounds && backgrounds.length ? backgrounds : [];
   const [idx, setIdx] = useState(0);
@@ -254,7 +265,11 @@ export default function CarbonLoginLayout({
         {/* Esquerda: headline + subheadline + categorias */}
         <div className="flex flex-col justify-end gap-6 px-8 pt-16 pb-12 lg:pl-16 lg:pr-12 lg:pb-16 text-white">
           <div className="max-w-2xl space-y-5">
-            {headline && <h1 className="text-2xl lg:text-4xl font-bold leading-[1.15]" style={{ fontFamily: SORA }}>{headline}</h1>}
+            {/* <p> e nao <h1>: o h1 da pagina e o titulo "SECURE SHARE" do bloco
+                de login, que e a identidade da tela. Esta frase e texto de
+                marca. Com os dois como h1, um leitor de tela anunciava dois
+                cabecalhos de nivel 1 e a pessoa nao sabia qual era a pagina. */}
+            {headline && <p className="text-2xl lg:text-4xl font-bold leading-[1.15]" style={{ fontFamily: SORA }}>{headline}</p>}
             {subheadline && <p className="text-lg lg:text-2xl font-light text-white/90">{subheadline}</p>}
             {categories?.length > 0 && (
               <p className="text-sm lg:text-base font-semibold text-white/95 leading-relaxed max-w-xl">
@@ -270,6 +285,9 @@ export default function CarbonLoginLayout({
             quadrada (500x500 com margens internas). Um h-[235px] aqui daria 823px de
             largura dentro de um painel de ~468px e estouraria a coluna. */}
         <div className="carbon-coluna-login relative flex flex-col items-center justify-start px-6 pt-[5vh] lg:pt-[9vh] pb-16 sm:px-10">
+          {cantoSuperior && (
+            <div className="absolute top-4 right-4 z-20 sm:top-5 sm:right-6">{cantoSuperior}</div>
+          )}
           {logoSrc && (
             /* SLOT do logo com a altura ORIGINAL do portal (h-44 / lg:h-[235px]), com a arte
                centrada dentro dele. O slot existe para que a troca de logo nao mova nada do

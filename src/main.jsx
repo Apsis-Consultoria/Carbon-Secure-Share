@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'sonner';
 
 import App from '@/App';
+import { ProvedorIdioma } from '@/lib/i18n';
 import '@/index.css';
 
 /* =====================================================================
@@ -61,9 +62,11 @@ if (typeof Node === 'function' && Node.prototype) {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-      <Toaster position="top-right" richColors closeButton />
-    </BrowserRouter>
+    <ProvedorIdioma>
+      <BrowserRouter>
+        <App />
+        <Toaster position="top-right" richColors closeButton />
+      </BrowserRouter>
+    </ProvedorIdioma>
   </StrictMode>,
 );
