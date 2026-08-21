@@ -93,23 +93,37 @@ Por padrão escuta só em `127.0.0.1`. Para testar no celular:
 VITE_EXPOR_REDE=true npm run dev
 ```
 
-### Variáveis do frontend
+### O frontend não tem variável de ambiente. Nenhuma.
 
-Crie um `.env` na raiz com as duas variáveis abaixo. Elas são **públicas por
-design**: entram no bundle e qualquer pessoa lê no DevTools. Nada que comece com
-`VITE_` é secreto.
+Não existe `.env`, não existe `import.meta.env` em `src/`, não existe URL de
+Supabase nem anon key no bundle. Quem abrir o DevTools na máquina de um cliente
+não descobre nem em qual projeto Supabase o sistema roda.
 
+Todas as chamadas vão para `/api/<funcao>`, um caminho **relativo** na mesma
+origem. Quem traduz isso para as Edge Functions é a camada de hospedagem, por um
+rewrite de proxy.
+
+**Por que isso importa, e não é preciosismo:** com a URL no bundle, qualquer
+pessoa que abra a tela de login descobre o endereço do projeto e passa a poder
+bater direto nas Edge Functions, fora do nosso domínio, sem passar por nenhum
+log, WAF ou limite de taxa da hospedagem. Com o proxy, a única porta pública é o
+nosso próprio domínio.
+
+Para rodar em desenvolvimento, o proxy do Vite precisa saber o destino. Isso é
+variável **do processo do Vite**, não do navegador: sem o prefixo `VITE_`, o
+Vite se recusa a expor ao cliente, então é impossível vazar para o bundle.
+
+```powershell
+$env:SUPABASE_FUNCTIONS_URL="https://<ref>.supabase.co/functions/v1"; npm run dev
 ```
-VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
-VITE_SUPABASE_ANON_KEY=COLE_A_ANON_KEY_AQUI
-```
 
-A proteção real é a RLS do Postgres (as tabelas do Secure Share não têm policy
-nenhuma, então a anon key não lê uma linha) somada ao token de sessão que cada
-Edge Function exige.
+Sem ela, o dev server avisa no boot e `/api/*` cai no `index.html`. A camada de
+API detecta isso pelo `content-type` e mostra uma mensagem própria, em vez de um
+erro de JSON inválido.
 
-Faltando qualquer uma delas, o app renderiza `src/pages/ErroConfig.jsx` em vez de
-tela branca.
+**Não há anon key em lugar nenhum.** As funções são publicadas com
+`--no-verify-jwt`: quem autoriza não é o JWT do Supabase, e sim o token de sessão
+assinado com `SESSION_SECRET`, conferido dentro de cada função.
 
 ### Secrets das Edge Functions
 
@@ -163,6 +177,22 @@ select cron.schedule(
 - **Frontend:** push em `main` → build no AWS Amplify (`amplify.yml`)
 - **Edge Functions:** push em `main` que toque `supabase/functions/**` →
   workflow `.github/workflows/deploy-functions.yml`
+
+### Passo obrigatório: o rewrite `/api`
+
+Sem ele o sistema não funciona, porque o frontend não conhece nenhum endereço.
+No console do Amplify, em **App settings > Rewrites and redirects**:
+
+| Source | Target | Type |
+|---|---|---|
+| `/api/<*>` | `https://<ref>.supabase.co/functions/v1/<*>` | `200 (Rewrite)` |
+
+Ele precisa vir **antes** do catch-all `/<*>` → `/index.html`, senão a SPA
+engole `/api/*` e devolve HTML.
+
+A regra fica no console, e não no `amplify.yml`, de propósito: o destino contém
+o ref do projeto Supabase, e deixá-lo no repositório significaria versionar qual
+projeto é o de produção.
 
 ## Convenções
 

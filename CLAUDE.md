@@ -39,10 +39,19 @@ entrando depois de a equipe ter revogado o acesso.
    inclusive o ZIP. A herança é aplicada no SERVIDOR
    (`_shared/regrasPermissao.ts` e `carbon_secure_share_nivel_item`). No
    frontend seria contornável pedindo o arquivo pelo caminho completo.
-4. **NUNCA a service_role key no frontend.** O frontend conhece apenas
-   `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. Não existe cliente
-   supabase-js neste bundle, de propósito: ele só criaria a tentação de
-   consultar uma tabela direto e pular a checagem de permissão.
+4. **O frontend NÃO TEM VARIÁVEL DE AMBIENTE. NENHUMA.** Não existe `.env`, não
+   existe `import.meta.env` em `src/`, não existe URL de Supabase nem anon key
+   no bundle. Tudo vai para o caminho relativo `/api/<funcao>`, e quem sabe o
+   endereço é a hospedagem, por rewrite (ver `src/lib/endpoint.js`).
+
+   Com a URL no bundle, qualquer pessoa que abrisse a tela de login descobriria
+   o endereço do projeto e passaria a bater direto nas Edge Functions, fora do
+   nosso domínio, sem log, WAF nem limite de taxa. Não reintroduza `VITE_*`
+   aqui: se algo precisa de configuração, ela vive no backend ou na hospedagem.
+
+   Também não existe cliente supabase-js neste bundle, de propósito: ele só
+   criaria a tentação de consultar uma tabela direto e pular a checagem de
+   permissão.
 5. **Proibido o caractere travessão (em dash).** Em código, comentários, textos,
    markdown, SQL e commits. Use hífen. Para conferir:
    `grep -rlP "\xe2\x80\x94" .` (o teste com `$'\u2014'` NÃO funciona no Git Bash
@@ -51,7 +60,11 @@ entrando depois de a equipe ter revogado o acesso.
 7. **LGPD:** nunca hardcode dado pessoal. Nome e e-mail de cliente existem no
    banco porque são necessários ao acesso nominal, nunca no código, nunca em
    exemplo. Não inventar cliente real em teste ou seed.
-8. **Nunca tela branca.** Configuração ausente renderiza `src/pages/ErroConfig.jsx`.
+8. **Nunca tela branca.** Não há mais checagem de configuração no boot, porque
+   não há configuração no frontend para checar. Se o rewrite `/api` faltar na
+   hospedagem, `src/lib/api.js` detecta pelo `content-type` (a SPA devolveria
+   HTML) e lança `proxy_nao_configurado` com mensagem própria, na primeira
+   chamada. A tela de login continua aparecendo normalmente.
 9. **Mensagem de erro é para LEITOR EXTERNO.** Quem lê é um cliente que não sabe
    o que é Edge Function, Graph ou SharePoint, e não pode fazer nada a respeito.
    Detalhe técnico vai para `console.error`, nunca para a resposta HTTP.

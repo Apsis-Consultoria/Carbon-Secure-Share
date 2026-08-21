@@ -1,4 +1,4 @@
-import { SUPABASE_ANON_KEY, urlFuncao } from '@/lib/supabase';
+import { caminhoFuncao } from '@/lib/endpoint';
 import { lerSessao, limparSessao } from '@/lib/sessao';
 
 /**
@@ -63,13 +63,44 @@ function mensagem(codigo, status) {
   return MENSAGENS.erro_interno;
 }
 
+/**
+ * Sem `apikey`: as funcoes sao publicadas com --no-verify-jwt e quem autoriza e
+ * o nosso token de sessao, conferido dentro de cada uma. Nao ha chave de
+ * Supabase neste bundle. Ver src/lib/endpoint.js.
+ */
 function cabecalhos(comToken = true) {
-  const saida = { apikey: SUPABASE_ANON_KEY, Accept: 'application/json' };
+  const saida = { Accept: 'application/json' };
   if (comToken) {
     const sessao = lerSessao();
     if (sessao?.token) saida.Authorization = `Bearer ${sessao.token}`;
   }
   return saida;
+}
+
+/**
+ * Detecta o rewrite `/api/*` faltando na hospedagem.
+ *
+ * SAO DUAS FORMAS DIFERENTES, e cobrir so uma nao adianta:
+ *
+ *   producao (Amplify)  sem a regra de /api, o caminho cai no catch-all da SPA
+ *                       e volta o index.html com status 200 e content-type
+ *                       text/html;
+ *   dev (Vite)          o fallback de SPA do Vite so vale para GET de
+ *                       navegacao. Um POST /api/... sem proxy volta 404 SEM
+ *                       CORPO - foi exatamente o que aconteceu no teste, e a
+ *                       checagem por content-type sozinha deixou passar.
+ *
+ * Sem isto, os dois casos aparecem como "algo deu errado do nosso lado" e a
+ * causa real (falta uma regra na hospedagem) fica escondida por horas.
+ *
+ * O criterio de corpo vazio e seguro porque TODA funcao deste sistema responde
+ * JSON, inclusive nos erros: um 404 nosso traz `{erro:'nao_encontrado'}`. Corpo
+ * ausente num 200 ou num 404 significa que a requisicao nem chegou a uma funcao.
+ */
+function proxyAusente(resposta, dados) {
+  const tipo = resposta.headers.get('content-type') || '';
+  if (tipo.includes('text/html')) return true;
+  return dados === null && (resposta.status === 404 || resposta.status === 200);
 }
 
 async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, comToken = true, signal = null } = {}) {
@@ -81,7 +112,7 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
 
   let resposta;
   try {
-    resposta = await fetch(`${urlFuncao(funcao)}${params}`, {
+    resposta = await fetch(`${caminhoFuncao(funcao)}${params}`, {
       method: metodo,
       headers: {
         ...cabecalhos(comToken),
@@ -109,6 +140,21 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
     dados = texto ? JSON.parse(texto) : null;
   } catch {
     dados = null;
+  }
+
+  if (proxyAusente(resposta, dados)) {
+    // Detalhe tecnico no console, nunca na tela: quem le a tela e um cliente,
+    // que nao tem como configurar rewrite nenhum.
+    console.error(
+      `[Secure Share] ${caminhoFuncao(funcao)} nao chegou a uma Edge Function ` +
+        `(HTTP ${resposta.status}). Falta o rewrite de /api/* na hospedagem. ` +
+        'Producao: Amplify > App settings > Rewrites and redirects, antes do catch-all da SPA. ' +
+        'Desenvolvimento: defina SUPABASE_FUNCTIONS_URL no ambiente do Vite.',
+    );
+    throw new ErroApi(
+      'O sistema não está configurado corretamente. Avise a pessoa da APSIS responsável pelo seu projeto.',
+      { codigo: 'proxy_nao_configurado', status: resposta.status },
+    );
   }
 
   // 207 = envio parcial. Nao e erro: quem chamou precisa da lista do que subiu.
@@ -181,7 +227,7 @@ export function urlArquivo(projetoId, caminho, modo = 'download') {
     modo,
     token: sessao?.token ?? '',
   });
-  return `${urlFuncao('carbon-ss-baixar')}?${params}`;
+  return `${caminhoFuncao('carbon-ss-baixar')}?${params}`;
 }
 
 /** Bytes de um arquivo, para montar o ZIP no navegador. */
@@ -212,7 +258,7 @@ export async function enviar(projetoId, itens, { signal } = {}) {
 
   let resposta;
   try {
-    resposta = await fetch(urlFuncao('carbon-ss-enviar'), {
+    resposta = await fetch(caminhoFuncao('carbon-ss-enviar'), {
       method: 'POST',
       headers: cabecalhos(),
       body: formulario,

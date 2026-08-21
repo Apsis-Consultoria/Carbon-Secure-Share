@@ -6,12 +6,12 @@ frontend:
         - npm ci
     build:
       commands:
-        # As duas variaveis publicas do frontend. Vem das variaveis de ambiente
-        # do app no Amplify, e NAO do repositorio. Nenhum secret entra aqui:
-        # tudo que comeca com VITE_ vai para o bundle e e legivel por qualquer
-        # pessoa que abrir o DevTools.
-        - export VITE_SUPABASE_URL=$SUPABASE_URL
-        - export VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+        # NENHUMA variavel de ambiente e exportada aqui, de proposito.
+        #
+        # O frontend nao conhece URL de Supabase nem chave nenhuma: ele chama o
+        # caminho relativo /api/<funcao>, e quem traduz isso para as Edge
+        # Functions e a regra de rewrite da hospedagem (ver a secao Deploy do
+        # README). Nada que identifique o projeto entra no bundle.
         - npm run build
   artifacts:
     baseDirectory: dist
@@ -21,8 +21,22 @@ frontend:
     paths:
       - node_modules/**/*
 
-# SPA: qualquer caminho serve o index.html e o React Router resolve.
-# Sem isso, recarregar em /senha devolve 404 da hospedagem.
+# A ORDEM IMPORTA. O Amplify avalia as regras de cima para baixo e para na
+# primeira que casar. Se o catch-all da SPA viesse antes, ele engoliria /api/*
+# e devolveria o index.html no lugar da resposta da funcao.
+#
+# A regra de /api NAO esta aqui: o destino contem o ref do projeto Supabase, e
+# deixa-lo no repositorio significaria versionar qual projeto e o de producao.
+# Ela e configurada no console do Amplify (App settings > Rewrites and
+# redirects), que e onde mora o resto da configuracao de ambiente:
+#
+#   source  /api/<*>
+#   target  https://<ref>.supabase.co/functions/v1/<*>
+#   type    200 (Rewrite)
+#
+# Sem essa regra, /api/* cai no catch-all abaixo e devolve HTML. A camada de API
+# do frontend detecta isso pelo content-type e mostra mensagem propria em vez de
+# um erro de JSON invalido (ver src/lib/api.js).
 customRules:
   - source: /<*>
     target: /index.html

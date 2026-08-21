@@ -4,16 +4,16 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import Login from '@/pages/Login';
 import Arquivos from '@/pages/Arquivos';
 import TrocarSenha from '@/pages/TrocarSenha';
-import ErroConfig from '@/pages/ErroConfig';
 import { lerSessao, limparSessao } from '@/lib/sessao';
-import { configuracaoIncompleta } from '@/lib/supabase';
 
 /**
  * App - roteamento e o portao de sessao.
  *
- * NUNCA TELA BRANCA: configuracao ausente renderiza ErroConfig e para por ali,
- * em vez de deixar cada chamada falhar com "failed to fetch" e a pessoa olhando
- * para um retangulo vazio.
+ * NAO existe mais checagem de configuracao no boot, porque nao existe mais
+ * configuracao no frontend para checar: ele nao conhece URL nem chave nenhuma
+ * (ver src/lib/endpoint.js). Se o rewrite de /api/* faltar na hospedagem, quem
+ * detecta e a camada de API, na primeira chamada, com mensagem propria - e a
+ * tela de login continua aparecendo normalmente em vez de virar um aviso.
  *
  * A sessao vive no estado daqui, e nao num contexto ou store: sao tres telas e
  * um unico consumidor real (Arquivos). Um provider aqui seria cerimonia sem
@@ -44,8 +44,6 @@ export default function App() {
     }, 60_000);
     return () => clearInterval(timer);
   }, [sessao, navegar]);
-
-  if (configuracaoIncompleta()) return <ErroConfig />;
 
   if (!sessao) {
     return (
