@@ -13,23 +13,28 @@
 //
 //   PowerShell (o Read-Host evita o segredo cair no historico do PSReadLine):
 //
-//     $env:AZURE_TENANT_ID     = Read-Host "Tenant ID"
-//     $env:AZURE_CLIENT_ID     = Read-Host "Client ID"
-//     $env:AZURE_CLIENT_SECRET = Read-Host "Client Secret" -AsSecureString | `
-//       ForEach-Object { [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-//         [Runtime.InteropServices.Marshal]::SecureStringToBSTR($_)) }
-//     node scripts/diagnostico-azure.mjs
+//     $env:AZURE_SECURE_SHARE_TENANT_ID     = Read-Host "Tenant ID"
+//     $env:AZURE_SECURE_SHARE_CLIENT_ID     = Read-Host "Client ID"
+//     $env:AZURE_SECURE_SHARE_CLIENT_SECRET = Read-Host "Client Secret"
+//     node scripts/diagnostico-azure.mjs --escrita
 //
 //   Git Bash:
 //
-//     read -s -p "Client Secret: " AZURE_CLIENT_SECRET; export AZURE_CLIENT_SECRET
-//     export AZURE_TENANT_ID=...; export AZURE_CLIENT_ID=...
-//     node scripts/diagnostico-azure.mjs
+//     read -s -p "Client Secret: " AZURE_SECURE_SHARE_CLIENT_SECRET
+//     export AZURE_SECURE_SHARE_CLIENT_SECRET
+//     export AZURE_SECURE_SHARE_TENANT_ID=...; export AZURE_SECURE_SHARE_CLIENT_ID=...
+//     node scripts/diagnostico-azure.mjs --escrita
 //
 // Por padrao faz SOMENTE LEITURA. Para incluir o teste de escrita (cria uma
 // pasta temporaria, envia um arquivo, le de volta e apaga tudo):
 //
 //     node scripts/diagnostico-azure.mjs --escrita
+//
+// ESTE DIAGNOSTICO E DO APP DO PORTAL DO CLIENTE. Sao DOIS registros no Azure,
+// um por sistema, e por isso os secrets tem prefixo: AZURE_SECURE_SHARE_* aqui,
+// AZURE_PORTAL_* no Portal Apsis Carbon. Os dois rodam no mesmo projeto
+// Supabase, onde secret e por projeto: sem prefixo, um usaria a credencial do
+// outro em silencio.
 //
 // O segredo NUNCA e impresso, nem em erro. Atencao: no PowerShell 5.1 o
 // separador de comandos e ';' - o '&&' nao funciona.
@@ -47,7 +52,11 @@ const SP_PASTA_BASE = process.env.SP_PASTA_BASE ?? 'Apsis Carbon';
 
 const TESTAR_ESCRITA = process.argv.includes('--escrita');
 
-const { AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET } = process.env;
+const {
+  AZURE_SECURE_SHARE_TENANT_ID: AZURE_TENANT_ID,
+  AZURE_SECURE_SHARE_CLIENT_ID: AZURE_CLIENT_ID,
+  AZURE_SECURE_SHARE_CLIENT_SECRET: AZURE_CLIENT_SECRET,
+} = process.env;
 
 let falhou = false;
 
@@ -83,9 +92,9 @@ async function main() {
 titulo('1. Credenciais no ambiente');
 
 const faltando = [
-  !AZURE_TENANT_ID && 'AZURE_TENANT_ID',
-  !AZURE_CLIENT_ID && 'AZURE_CLIENT_ID',
-  !AZURE_CLIENT_SECRET && 'AZURE_CLIENT_SECRET',
+  !AZURE_TENANT_ID && 'AZURE_SECURE_SHARE_TENANT_ID',
+  !AZURE_CLIENT_ID && 'AZURE_SECURE_SHARE_CLIENT_ID',
+  !AZURE_CLIENT_SECRET && 'AZURE_SECURE_SHARE_CLIENT_SECRET',
 ].filter(Boolean);
 
 if (faltando.length) {
@@ -349,7 +358,9 @@ if (falhou) {
 
 console.log('A credencial de aplicativo funciona e alcanca a biblioteca certa.');
 console.log('Proximo passo: gravar os mesmos tres valores como secrets das Edge');
-console.log('Functions no Supabase (nunca em arquivo do repositorio).');
+console.log('Functions no Supabase, com os nomes AZURE_SECURE_SHARE_TENANT_ID,');
+console.log('AZURE_SECURE_SHARE_CLIENT_ID e AZURE_SECURE_SHARE_CLIENT_SECRET.');
+console.log('Nunca em arquivo do repositorio.');
 
 }
 

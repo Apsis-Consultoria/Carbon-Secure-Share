@@ -133,14 +133,20 @@ Configurados no painel do Supabase (Edge Functions > Secrets) ou por
 | Secret | Para que serve |
 |---|---|
 | `SESSION_SECRET` | assina o token de sessão. Mínimo de 32 caracteres. Trocar invalida todas as sessões abertas. Gerar com `openssl rand -base64 48` |
-| `AZURE_TENANT_ID` | registro do app no Entra ID |
-| `AZURE_CLIENT_ID` | idem |
-| `AZURE_CLIENT_SECRET` | idem |
+| `AZURE_SECURE_SHARE_TENANT_ID` | registro do app **deste** portal no Entra ID |
+| `AZURE_SECURE_SHARE_CLIENT_ID` | idem |
+| `AZURE_SECURE_SHARE_CLIENT_SECRET` | idem |
 | `SUPABASE_URL` | injetado pela plataforma |
 | `SUPABASE_SERVICE_ROLE_KEY` | injetado pela plataforma |
 
-O registro do app no Azure precisa da permissão de **aplicativo** (não delegada)
-`Sites.ReadWrite.All`, com consentimento de administrador.
+O registro do app no Azure precisa das permissões de **aplicativo** (não
+delegadas) `Sites.Selected` e `Mail.Send`, com consentimento de administrador.
+Ver [docs/configurar-azure.md](docs/configurar-azure.md).
+
+**São dois registros, um por sistema.** O Portal Apsis Carbon usa
+`AZURE_PORTAL_*` e este portal usa `AZURE_SECURE_SHARE_*`. Os dois rodam no mesmo
+projeto Supabase, onde secret é por projeto: com nomes iguais, um sistema usaria a
+credencial do outro em silêncio.
 
 ## Banco de dados
 

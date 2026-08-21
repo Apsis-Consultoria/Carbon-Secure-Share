@@ -4,7 +4,9 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import Login from '@/pages/Login';
 import Arquivos from '@/pages/Arquivos';
 import TrocarSenha from '@/pages/TrocarSenha';
-import { lerSessao, limparSessao } from '@/lib/sessao';
+import { entrarDemo } from '@/lib/api';
+import { MODO_DEMO } from '@/lib/demo';
+import { gravarSessao, lerSessao, limparSessao } from '@/lib/sessao';
 
 /**
  * App - roteamento e o portao de sessao.
@@ -28,6 +30,38 @@ export default function App() {
     setSessao(null);
     navegar('/', { replace: true });
   }, [navegar]);
+
+  /**
+   * Em DEMONSTRACAO, refaz a sessao no boot.
+   *
+   * A sessao vive em sessionStorage e sobrevive ao recarregar. Isso e o certo em
+   * producao, mas na revisao vira armadilha: mexer no dataset ficticio (incluir
+   * a pasta Geral, por exemplo) nao aparece na tela, porque a lista de projetos
+   * guardada continua sendo a antiga. Ja custou um "sumiu da tela" que era so
+   * cache.
+   *
+   * Refazer o login aqui e barato (nao ha rede em demonstracao) e o bloco sai do
+   * build de producao junto com MODO_DEMO.
+   */
+  useEffect(() => {
+    if (!MODO_DEMO) return undefined;
+    const atual = lerSessao();
+    if (!atual?.demo) return undefined;
+
+    let vivo = true;
+    entrarDemo()
+      .then((dados) => {
+        if (!vivo) return;
+        const nova = { ...atual, projetos: dados.projetos ?? [], nome: dados.nome ?? '' };
+        gravarSessao(nova);
+        setSessao(nova);
+      })
+      .catch(() => { /* segue com a sessao guardada */ });
+
+    return () => { vivo = false; };
+    // So no boot: com `sessao` nas dependencias isto entraria em laco.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * A sessao pode expirar com a aba aberta (TTL de 8 horas). Sem esta checagem,

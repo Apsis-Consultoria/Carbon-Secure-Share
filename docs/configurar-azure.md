@@ -50,6 +50,26 @@ uma razão escrita.
 
 ---
 
+## São DOIS registros, um por sistema
+
+O Portal Apsis Carbon e o Secure Share Carbon rodam no **mesmo projeto Supabase**,
+e secret de Edge Function é por **projeto**. Se os dois lessem `AZURE_CLIENT_ID`,
+só um registro caberia, e um dos sistemas usaria a credencial do outro em
+silêncio. Por isso os nomes têm prefixo:
+
+| Sistema | Secrets |
+|---|---|
+| Portal Apsis Carbon | `AZURE_PORTAL_TENANT_ID`, `AZURE_PORTAL_CLIENT_ID`, `AZURE_PORTAL_CLIENT_SECRET` |
+| Secure Share Carbon | `AZURE_SECURE_SHARE_TENANT_ID`, `AZURE_SECURE_SHARE_CLIENT_ID`, `AZURE_SECURE_SHARE_CLIENT_SECRET` |
+
+Dois registros não são só burocracia: o portal do cliente é a superfície exposta
+na internet, e credencial separada permite **rotacionar e revogar um sem derrubar
+o outro**. O log de entrada do Azure também passa a dizer qual sistema fez cada
+chamada, o que é o que se quer numa investigação.
+
+Este documento cobre o registro do **Secure Share Carbon**. O do Portal segue os
+mesmos passos, mudando o nome e os secrets.
+
 ## 1. Registrar o aplicativo
 
 No **Microsoft Entra ID** (antigo Azure Active Directory), em **App registrations**,
@@ -63,8 +83,8 @@ crie um registro novo:
 
 Anote da tela **Overview**:
 
-- **Application (client) ID** → vira `AZURE_CLIENT_ID`
-- **Directory (tenant) ID** → vira `AZURE_TENANT_ID`
+- **Application (client) ID** → vira `AZURE_SECURE_SHARE_CLIENT_ID`
+- **Directory (tenant) ID** → vira `AZURE_SECURE_SHARE_TENANT_ID`
 
 Os dois são identificadores, não segredos.
 
@@ -80,7 +100,7 @@ Copie o campo **Value** na hora: ele só aparece uma vez. O campo **Secret ID**
 **não** serve para nada aqui, e confundir os dois é o erro mais comum (o
 diagnóstico avisa quando o valor é curto demais).
 
-Esse valor vira `AZURE_CLIENT_SECRET`.
+Esse valor vira `AZURE_SECURE_SHARE_CLIENT_SECRET`.
 
 > **Anote a data de expiração num lembrete.** Quando ele vencer, o sistema para de
 > falar com o SharePoint e o erro que aparece na tela é genérico. O diagnóstico do
@@ -91,7 +111,16 @@ Esse valor vira `AZURE_CLIENT_SECRET`.
 Em **API permissions > Add a permission > Microsoft Graph > Application permissions**
 (não *Delegated*).
 
-Adicione **`Sites.Selected`**.
+Adicione as **duas**:
+
+| Permissão | Para quê |
+|---|---|
+| `Sites.Selected` | ler e escrever os arquivos na biblioteca |
+| `Mail.Send` | enviar ao cliente o código de acesso do login |
+
+`Mail.Send` passou a ser necessária quando o login deixou de ter senha: o cliente
+recebe um código por e-mail. Ela é de **aplicativo**, o que significa enviar como
+qualquer caixa do tenant - veja a trava obrigatória na seção 3.2.
 
 Depois clique em **Grant admin consent for APSIS**. Sem esse clique a permissão
 fica listada mas **não é concedida**, e o token sai sem ela. O diagnóstico do
@@ -123,7 +152,7 @@ Content-Type: application/json
   "grantedToIdentities": [
     {
       "application": {
-        "id": "<AZURE_CLIENT_ID>",
+        "id": "<Application (client) ID>",
         "displayName": "Secure Share Carbon"
       }
     }
@@ -134,6 +163,26 @@ Content-Type: application/json
 `"roles": ["write"]` e não `["read"]`: o cliente envia arquivos, então o
 aplicativo precisa escrever. O diagnóstico com `--escrita` prova isso.
 
+### 3.2. Travar o `Mail.Send` numa caixa só (obrigatório)
+
+`Mail.Send` de aplicativo autoriza enviar e-mail **como qualquer pessoa da
+APSIS**, inclusive um diretor. Como esse segredo vive no Supabase, um vazamento
+viraria phishing perfeito, assinado por quem o atacante escolher.
+
+A trava é uma política do Exchange Online, executada por quem administra o
+Exchange:
+
+```powershell
+New-ApplicationAccessPolicy -AppId <Application (client) ID> -PolicyScopeGroupId portal@apsis.com.br -AccessRight RestrictAccess -Description "Secure Share Carbon: so a caixa do portal"
+```
+
+Depois disso o app só consegue enviar como `portal@apsis.com.br`, que é o
+remetente configurado em `carbon_app_config`. Confirme com:
+
+```powershell
+Test-ApplicationAccessPolicy -Identity portal@apsis.com.br -AppId <Application (client) ID>
+```
+
 ### Alternativa, se `Sites.Selected` não for viável
 
 Se a governança da APSIS não permitir a chamada acima, use `Sites.ReadWrite.All`
@@ -141,21 +190,29 @@ no lugar, **e registre a decisão**. O sistema funciona igual; o que muda é o
 tamanho do estrago em caso de vazamento. O diagnóstico avisa quando detecta essa
 permissão.
 
-## 4. Criar a biblioteca no SharePoint
+## 4. Criar as pastas no SharePoint
 
-No site `/sites/Projetos`, crie uma **biblioteca de documentos** chamada:
+Os arquivos do Carbon **não** vão para uma biblioteca separada: vão para uma pasta
+dentro da biblioteca que a APSIS já usa.
 
 ```
-Secure Share Carbon
+/sites/Projetos
+  biblioteca "Secure Share"        <- já existe, compartilhada com o Portal Apsis
+    Apsis Carbon/                  <- criar
+      Geral/                       <- criar
 ```
 
-O nome precisa bater **exatamente**, maiúsculas incluídas: o código procura a
-biblioteca pelo nome (`_shared/graph.ts`).
+Os nomes precisam bater **exatamente**, maiúsculas incluídas: o código procura a
+biblioteca e a pasta pelo nome. Eles vivem em `carbon_app_config`, chave
+`secure_share`, nos campos `biblioteca`, `pastaBase` e `pastaGeral`.
 
-Ela é **diferente** da biblioteca `Secure Share` usada pelo Portal Apsis, de
-propósito: assim as árvores de pastas dos dois sistemas não se misturam, e um
-cliente de projeto de carbono nunca cai na pasta de um cliente de M&A por colisão
-de nome de empresa.
+A pasta `Geral` é a que todos os clientes enxergam. **Cuidado**: o que for
+colocado ali aparece para todos os clientes de todos os projetos.
+
+Como a biblioteca é dividida com o Portal Apsis, o código tem uma trava
+(`exigirDentroDaBase` em `_shared/graph.ts`) que recusa qualquer operação fora de
+`Apsis Carbon`. Ela é necessária porque o consentimento do Azure é por **site**,
+não por pasta: a credencial tecnicamente alcança a biblioteca inteira.
 
 ## 5. Provar que funciona, antes de depender disso
 
@@ -168,17 +225,18 @@ O segredo nunca é impresso.
 PowerShell:
 
 ```powershell
-$env:AZURE_TENANT_ID = Read-Host "Tenant ID"
-$env:AZURE_CLIENT_ID = Read-Host "Client ID"
-$env:AZURE_CLIENT_SECRET = Read-Host "Client Secret"
+$env:AZURE_SECURE_SHARE_TENANT_ID = Read-Host "Tenant ID"
+$env:AZURE_SECURE_SHARE_CLIENT_ID = Read-Host "Client ID"
+$env:AZURE_SECURE_SHARE_CLIENT_SECRET = Read-Host "Client Secret"
 node scripts/diagnostico-azure.mjs --escrita
 ```
 
 Git Bash:
 
 ```bash
-read -s -p "Client Secret: " AZURE_CLIENT_SECRET; export AZURE_CLIENT_SECRET
-export AZURE_TENANT_ID=...; export AZURE_CLIENT_ID=...
+read -s -p "Client Secret: " AZURE_SECURE_SHARE_CLIENT_SECRET
+export AZURE_SECURE_SHARE_CLIENT_SECRET
+export AZURE_SECURE_SHARE_TENANT_ID=...; export AZURE_SECURE_SHARE_CLIENT_ID=...
 node scripts/diagnostico-azure.mjs --escrita
 ```
 
@@ -192,8 +250,12 @@ arquivo do repositório.
 Pelo painel: **Edge Functions > Secrets**. Ou pela CLI:
 
 ```bash
-supabase secrets set AZURE_TENANT_ID=... AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=... --project-ref <ref>
+npx supabase secrets set AZURE_SECURE_SHARE_TENANT_ID="..." AZURE_SECURE_SHARE_CLIENT_ID="..." AZURE_SECURE_SHARE_CLIENT_SECRET="..." --project-ref bknkjcqrnzjjnvtviati
 ```
+
+As aspas importam: o segredo do Azure costuma trazer `/`, `+` e `=`, e sem elas o
+shell come parte do valor. O sintoma seria o login funcionando na emissao e
+falhando na validacao, que e chato de diagnosticar. Colar pelo painel evita isso.
 
 Falta ainda um quarto secret, que não é do Azure: `SESSION_SECRET`, que assina o
 token de sessão do cliente. Gere um valor aleatório de 32 caracteres ou mais:

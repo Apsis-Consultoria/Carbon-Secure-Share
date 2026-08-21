@@ -9,10 +9,28 @@
 // dizer sim para tudo que o aplicativo pode ler, e quem decide o que ESTE
 // cliente pode ver e o par sessao + carbon_secure_share_permissoes.
 //
-// SECRETS: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET.
-// Permissoes de APLICATIVO no registro do app, com admin consent:
-// Sites.ReadWrite.All. (Mail.Send fica no Portal Carbon, que e quem envia
-// convite; este repositorio nao manda e-mail de acesso.)
+// SECRETS, com prefixo AZURE_SECURE_SHARE_:
+//   AZURE_SECURE_SHARE_TENANT_ID
+//   AZURE_SECURE_SHARE_CLIENT_ID
+//   AZURE_SECURE_SHARE_CLIENT_SECRET
+//
+// POR QUE O PREFIXO, e nao os nomes curtos AZURE_*: este sistema e o Portal
+// Apsis Carbon rodam no MESMO projeto Supabase, e secret de Edge Function e por
+// PROJETO. Com os dois lendo `AZURE_CLIENT_ID`, so um registro de aplicativo
+// caberia no projeto e o outro ficaria morto - o sintoma seria um dos dois
+// sistemas usando silenciosamente a credencial do outro.
+//
+// Sao dois registros no Azure de proposito. Este aqui atende o portal do
+// CLIENTE, que e a superficie exposta na internet: isolar a credencial dele
+// permite rotacionar e revogar sem derrubar o portal interno, e o log de entrada
+// do Azure passa a dizer QUAL sistema fez cada chamada.
+//
+// Permissoes de APLICATIVO neste registro, com admin consent:
+//   Sites.Selected   ler e escrever a biblioteca (autorizada site a site)
+//   Mail.Send        enviar o codigo de acesso ao cliente
+//
+// Sem fallback para os nomes antigos de proposito: cair no secret do outro
+// sistema em silencio e pior do que falhar com o nome exato na mensagem.
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const FOLGA_MS = 5 * 60 * 1000;
@@ -40,9 +58,9 @@ function exigirEnv(nome: string): string {
 /** true quando os tres secrets do Azure existem. Usado para responder 503 cedo. */
 export function temConfigAzure(): boolean {
   return Boolean(
-    Deno.env.get('AZURE_TENANT_ID') &&
-      Deno.env.get('AZURE_CLIENT_ID') &&
-      Deno.env.get('AZURE_CLIENT_SECRET'),
+    Deno.env.get('AZURE_SECURE_SHARE_TENANT_ID') &&
+      Deno.env.get('AZURE_SECURE_SHARE_CLIENT_ID') &&
+      Deno.env.get('AZURE_SECURE_SHARE_CLIENT_SECRET'),
   );
 }
 
@@ -50,10 +68,10 @@ export async function obterToken(): Promise<string> {
   const agora = Date.now();
   if (tokenCache && tokenCache.expiraEm - FOLGA_MS > agora) return tokenCache.valor;
 
-  const tenant = exigirEnv('AZURE_TENANT_ID');
+  const tenant = exigirEnv('AZURE_SECURE_SHARE_TENANT_ID');
   const corpo = new URLSearchParams({
-    client_id: exigirEnv('AZURE_CLIENT_ID'),
-    client_secret: exigirEnv('AZURE_CLIENT_SECRET'),
+    client_id: exigirEnv('AZURE_SECURE_SHARE_CLIENT_ID'),
+    client_secret: exigirEnv('AZURE_SECURE_SHARE_CLIENT_SECRET'),
     // .default pede as permissoes de APLICATIVO ja consentidas. Listar escopo a
     // escopo nao funciona em client credentials: o Azure recusa com invalid_scope.
     scope: 'https://graph.microsoft.com/.default',
