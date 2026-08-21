@@ -61,6 +61,15 @@ let estado = null;
 
 function criarEstado() {
   const projetos = [
+    // A Geral entra como projeto reservado e somente leitura, igual ao que a
+    // Edge Function de login faz em producao.
+    {
+      projeto_id: 'geral',
+      empresa: 'Geral',
+      ap_os: null,
+      pasta: 'Geral',
+      somenteLeitura: true,
+    },
     {
       projeto_id: 'demo-projeto-1',
       empresa: 'Example Reforestation Ltd.',
@@ -100,6 +109,17 @@ function criarEstado() {
       'Project documents/Attachments': [
         { nome: 'Area map.png', tipo: 'arquivo', tamanho: 3004112, nivel: 'total' },
         { nome: 'Field survey.pdf', tipo: 'arquivo', tamanho: 655360, nivel: 'total' },
+      ],
+    },
+    geral: {
+      '': [
+        { nome: 'Metodologias', tipo: 'pasta', tamanho: null, nivel: 'total' },
+        { nome: 'APSIS Carbon - institucional.pdf', tipo: 'arquivo', tamanho: 1820400, nivel: 'total' },
+        { nome: 'Glossario do mercado de carbono.pdf', tipo: 'arquivo', tamanho: 640210, nivel: 'total' },
+      ],
+      Metodologias: [
+        { nome: 'VM0007 REDD+.pdf', tipo: 'arquivo', tamanho: 3120044, nivel: 'total' },
+        { nome: 'VCS Standard v4.pdf', tipo: 'arquivo', tamanho: 2410880, nivel: 'total' },
       ],
     },
     // Projeto vazio: exercita o estado vazio da tela, que e facil de esquecer.
@@ -233,6 +253,13 @@ export async function demoBaixar(projetoId, caminho) {
  */
 export async function demoEnviar(projetoId, itens, destino = '') {
   await esperar(700);
+
+  // Espelha a recusa do servidor: a Geral e somente leitura para o cliente.
+  if (projetoId === 'geral') {
+    const e = new Error('pasta_somente_leitura');
+    e.codigo = 'pasta_somente_leitura';
+    throw e;
+  }
 
   const doProjeto = bd().arvore[projetoId];
   if (doProjeto) {

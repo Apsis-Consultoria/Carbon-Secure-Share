@@ -25,12 +25,32 @@
 const codificador = new TextEncoder();
 const decodificador = new TextDecoder();
 
+/**
+ * Identificador reservado da pasta GERAL.
+ *
+ * Nao e um uuid de proposito: nenhum projeto real pode colidir com ele, e a
+ * diferenca salta aos olhos em log e em URL. A Geral entra na sessao como se
+ * fosse um projeto, e por isso listar, visualizar e baixar funcionam sem
+ * nenhuma ramificacao. O que ela NAO permite - enviar - e barrado em um unico
+ * ponto, no carbon-ss-enviar.
+ */
+export const ID_GERAL = 'geral';
+
 export interface ProjetoSessao {
   projeto_id: string;
   empresa: string;
   ap_os: string | null;
   /** Nome da pasta no SharePoint, calculado no banco. Autoritativo. */
   pasta: string;
+  /**
+   * true na Geral: o cliente le, nao escreve.
+   *
+   * Viaja DENTRO do token assinado, entao o navegador nao consegue forja-la.
+   * Ainda assim o servidor nao confia so nela: carbon-ss-enviar tambem compara
+   * com ID_GERAL, porque duas checagens independentes e o que separa um bug de
+   * um vazamento.
+   */
+  somenteLeitura?: boolean;
 }
 
 export interface PayloadSessao {

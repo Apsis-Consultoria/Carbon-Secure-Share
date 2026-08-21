@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Folder, FolderOpen, ChevronRight, ChevronDown, Download, Loader2, RefreshCw, LogOut,
-  KeyRound, UploadCloud, FileText, FileSpreadsheet, Image as IconeImagem,
+  KeyRound, UploadCloud, FileText, FileSpreadsheet, Image as IconeImagem, Globe2,
   File as IconeArquivo, FolderArchive, Lock, Inbox, FlaskConical, FolderInput,
 } from 'lucide-react';
 
@@ -20,31 +20,31 @@ import BarraProgresso from '@/components/ui/BarraProgresso';
 import BotaoSecundario from '@/components/ui/BotaoSecundario';
 
 /**
- * Arquivos - navegacao em DUAS COLUNAS, no formato do explorador do Windows.
+ * Arquivos - explorador em duas colunas, com DUAS RAIZES.
  *
- * POR QUE: o Secure Share do Carbon nao e um envio pontual. A pasta e alimentada
- * ao longo do contrato e o cliente volta muitas vezes durante meses. Uma lista
- * unica serve para "baixar e sair"; para navegar e alimentar toda semana o que
- * serve e explorador.
+ * A arvore mostra, lado a lado:
  *
- * Esquerda: arvore de pastas e arquivos, com selecao.
- * Direita:  o arquivo selecionado, aberto ali mesmo.
+ *   Geral                 documentos que a APSIS publica para todos os clientes.
+ *                         SOMENTE LEITURA: o cliente ve e baixa, nao envia.
+ *   <Empresa do cliente>   a pasta do projeto dele, onde ele pode enviar.
  *
- * ARRASTAR E SOLTAR EM CIMA DA PASTA. Cada pasta da arvore e um alvo: soltar
- * arquivos sobre ela envia PARA ELA, na hora, sem fila e sem botao de confirmar,
- * que e o gesto do explorador. Soltar no fundo da arvore envia para a raiz do
- * projeto. Pasta arrastada inteira preserva a estrutura.
+ * POR QUE DUAS RAIZES E NAO ABAS: sao dois lugares que a pessoa consulta na
+ * mesma visita, e aba obriga a lembrar que a outra existe. No explorador do
+ * Windows sao duas unidades na mesma lista, e e assim aqui.
  *
- * O servidor NUNCA sobrescreve: nome repetido vira copia (conflictBehavior
- * rename) e a tela avisa quais foram renomeados. Sem isso, um arquivo do cliente
- * com o mesmo nome apagaria um documento da APSIS - perda de evidencia
- * silenciosa numa pasta de due diligence.
+ * A Geral chega como um "projeto" reservado dentro do token de sessao (ver
+ * carbon-ss-login), com somenteLeitura = true. Por isso listar, visualizar e
+ * baixar funcionam sem nenhuma ramificacao: o que muda e so o que a tela
+ * OFERECE. Quem realmente recusa o envio e o servidor, em carbon-ss-enviar.
  *
- * EM TELA ESTREITA nao ha duas colunas: a lista ocupa tudo e o visualizador cobre
- * a tela com um botao de voltar.
+ * CHAVE DE ESTADO: `escopo::caminho`. Duas raizes podem ter pastas de mesmo
+ * nome ("Documentos" na Geral e no projeto), e sem o prefixo de escopo as duas
+ * compartilhariam o mesmo no da arvore - uma abriria o conteudo da outra.
  */
 
 /* ===== Apoio ============================================================== */
+
+const chaveDe = (escopo, caminho = '') => `${escopo}::${caminho}`;
 
 function criarFormatador(idioma) {
   const local = idioma === 'pt' ? 'pt-BR' : 'en-US';
@@ -73,12 +73,10 @@ function IconeDoArquivo({ nome }) {
 }
 
 /* ===== Leitura do que foi arrastado ======================================= */
-// A FileSystem API e a unica forma de ler uma PASTA solta na tela.
-//
 // `webkitGetAsEntry` precisa ser chamado de forma SINCRONA no handler do drop:
 // os DataTransferItem sao invalidados assim que o handler cede o controle, e um
 // `await` antes disso faz a leitura devolver vazio, sem erro nenhum. Por isso a
-// coleta e a travessia estao separadas em duas funcoes.
+// coleta e a travessia estao separadas.
 
 function coletarDoEvento(evento) {
   const entradas = [];
@@ -116,7 +114,6 @@ async function percorrer(entradas, prefixo = '') {
   return saida;
 }
 
-/** Resolve o que foi solto em `[{arquivo, subPath}]`, com pasta ou sem. */
 async function resolverSoltos({ entradas, simples }) {
   if (entradas.length) {
     try {
@@ -129,7 +126,6 @@ async function resolverSoltos({ entradas, simples }) {
   return simples.map((arquivo) => ({ arquivo, subPath: '' }));
 }
 
-/** Ha arquivo sendo arrastado? Evita destacar pasta ao arrastar texto. */
 function arrastandoArquivo(evento) {
   return Array.from(evento.dataTransfer?.types ?? []).includes('Files');
 }
@@ -140,21 +136,18 @@ export default function Arquivos({ sessao, aoSair }) {
   const { t, idioma } = useIdioma();
   const fmtTamanho = criarFormatador(idioma);
 
-  const projetos = sessao.projetos ?? [];
-  const [projetoId, setProjetoId] = useState(projetos[0]?.projeto_id ?? '');
-  const projeto = projetos.find((p) => p.projeto_id === projetoId) ?? projetos[0];
+  const escopos = sessao.projetos ?? [];
 
-  const [raiz, setRaiz] = useState(null);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState(null);
+  const [raizes, setRaizes] = useState({});
   const [conteudo, setConteudo] = useState({});
   const [abertas, setAbertas] = useState(new Set());
   const [ocupadas, setOcupadas] = useState(new Set());
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState(null);
   const [selecionado, setSelecionado] = useState(null);
 
-  // Pasta que recebe o envio pelo BOTAO (o arrastar usa a pasta sob o cursor).
-  const [pastaAtual, setPastaAtual] = useState('');
-  // Pasta sob o cursor durante o arraste. null = nenhuma; '' = raiz.
+  // Onde o envio pelo BOTAO cai. O arrastar usa a pasta sob o cursor.
+  const [pastaAtual, setPastaAtual] = useState(null);
   const [alvoSoltar, setAlvoSoltar] = useState(null);
   const [enviando, setEnviando] = useState(null);
 
@@ -164,77 +157,91 @@ export default function Arquivos({ sessao, aoSair }) {
 
   const emDemo = MODO_DEMO && sessao.demo;
 
-  const carregarRaiz = useCallback(async () => {
-    if (!projetoId) return;
+  /** Escopo gravavel padrao: o primeiro que nao seja somente leitura. */
+  const escopoGravavel = escopos.find((e) => !e.somenteLeitura) ?? null;
+
+  const carregarTudo = useCallback(async () => {
     setCarregando(true);
     setErro(null);
     setConteudo({});
-    setAbertas(new Set());
     setSelecionado(null);
-    setPastaAtual('');
+
     try {
-      const r = await listar(projetoId, '');
-      setRaiz(r.itens ?? []);
+      const respostas = await Promise.all(
+        escopos.map((e) => listar(e.projeto_id, '').then((r) => [e.projeto_id, r.itens ?? []])),
+      );
+      setRaizes(Object.fromEntries(respostas));
+      // Abre todas as raizes: sao duas, e deixar fechadas obrigaria dois cliques
+      // so para ver que existe alguma coisa.
+      setAbertas(new Set(escopos.map((e) => chaveDe(e.projeto_id))));
     } catch (e) {
       setErro(textoDoErro(t, e));
     } finally {
       setCarregando(false);
     }
-  }, [projetoId, t]);
+    // escopos vem do token e nao muda durante a sessao; o eslint nao enxerga isso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t]);
 
-  useEffect(() => { carregarRaiz(); }, [carregarRaiz]);
+  useEffect(() => { carregarTudo(); }, [carregarTudo]);
 
-  /** Relê UMA pasta e deixa ela aberta. Usado depois de um envio. */
-  const recarregarPasta = useCallback(
-    async (caminho) => {
-      const r = await listar(projetoId, caminho);
-      if (!caminho) {
-        setRaiz(r.itens ?? []);
-        return;
-      }
-      setConteudo((a) => ({ ...a, [caminho]: r.itens ?? [] }));
-      setAbertas((a) => new Set([...a, caminho]));
-    },
-    [projetoId],
-  );
+  useEffect(() => {
+    if (!pastaAtual && escopoGravavel) {
+      setPastaAtual({ escopo: escopoGravavel.projeto_id, caminho: '' });
+    }
+  }, [pastaAtual, escopoGravavel]);
 
-  async function alternarPasta(caminho) {
-    // Clicar numa pasta tambem a torna a pasta ATUAL, como no explorador: o
-    // proximo envio pelo botao vai para ela.
-    setPastaAtual(caminho);
+  /** Relê UMA pasta e a deixa aberta. Usado depois de um envio. */
+  const recarregarPasta = useCallback(async (escopo, caminho) => {
+    const r = await listar(escopo, caminho);
+    if (!caminho) {
+      setRaizes((a) => ({ ...a, [escopo]: r.itens ?? [] }));
+    } else {
+      setConteudo((a) => ({ ...a, [chaveDe(escopo, caminho)]: r.itens ?? [] }));
+    }
+    setAbertas((a) => new Set([...a, chaveDe(escopo, caminho)]));
+  }, []);
 
-    if (abertas.has(caminho)) {
-      setAbertas((a) => { const n = new Set(a); n.delete(caminho); return n; });
+  async function alternarPasta(escopo, caminho, gravavel) {
+    const k = chaveDe(escopo, caminho);
+    if (gravavel) setPastaAtual({ escopo, caminho });
+
+    if (abertas.has(k)) {
+      setAbertas((a) => { const n = new Set(a); n.delete(k); return n; });
       return;
     }
-    setAbertas((a) => new Set([...a, caminho]));
-    if (conteudo[caminho] !== undefined) return;
+    setAbertas((a) => new Set([...a, k]));
+    if (conteudo[k] !== undefined) return;
 
-    setOcupadas((a) => new Set([...a, caminho]));
+    setOcupadas((a) => new Set([...a, k]));
     try {
-      const r = await listar(projetoId, caminho);
-      setConteudo((a) => ({ ...a, [caminho]: r.itens ?? [] }));
+      const r = await listar(escopo, caminho);
+      setConteudo((a) => ({ ...a, [k]: r.itens ?? [] }));
     } catch (e) {
       toast.error(t('pasta.naoAbriu', { nome: caminho.split('/').pop() }), {
         description: textoDoErro(t, e),
       });
-      setAbertas((a) => { const n = new Set(a); n.delete(caminho); return n; });
+      setAbertas((a) => { const n = new Set(a); n.delete(k); return n; });
     } finally {
-      setOcupadas((a) => { const n = new Set(a); n.delete(caminho); return n; });
+      setOcupadas((a) => { const n = new Set(a); n.delete(k); return n; });
     }
   }
 
   /* ---- Envio ------------------------------------------------------------- */
 
-  const rotuloPasta = (caminho) =>
-    caminho ? caminho.split('/').pop() : t('envio.paraRaiz');
+  const rotuloDestino = (alvo) => {
+    if (!alvo) return '';
+    if (alvo.caminho) return alvo.caminho.split('/').pop();
+    const escopo = escopos.find((e) => e.projeto_id === alvo.escopo);
+    return escopo?.empresa ?? t('envio.paraRaiz');
+  };
 
-  async function enviarPara(itens, destino) {
+  async function enviarPara(itens, escopo, caminho) {
     if (!itens.length || enviando) return;
 
-    setEnviando({ n: itens.length, destino });
+    setEnviando({ n: itens.length, destino: { escopo, caminho } });
     try {
-      const r = await enviar(projetoId, itens, { destino });
+      const r = await enviar(escopo, itens, { destino: caminho });
 
       if (r.falhas?.length) {
         toast.warning(
@@ -246,8 +253,6 @@ export default function Arquivos({ sessao, aoSair }) {
         );
       } else {
         toast.success(t('envio.sucesso', { n: r.enviados.length }), {
-          // Renomeacao nao e detalhe: quem enviou precisa saber que o arquivo
-          // ficou com outro nome, senao vai procurar o original e nao achar.
           description: r.renomeados?.length
             ? t('envio.renomeados', { n: r.renomeados.length })
             : undefined,
@@ -255,7 +260,7 @@ export default function Arquivos({ sessao, aoSair }) {
         });
       }
 
-      await recarregarPasta(destino);
+      await recarregarPasta(escopo, caminho);
     } catch (e) {
       toast.error(t('envio.falhou'), { description: textoDoErro(t, e) });
     } finally {
@@ -263,54 +268,55 @@ export default function Arquivos({ sessao, aoSair }) {
     }
   }
 
-  /** Handlers de soltar, iguais para uma pasta e para o fundo da arvore. */
-  function alvoDeSolta(caminho) {
+  /**
+   * Handlers de soltar. `gravavel` false devolve objeto vazio: a pasta deixa de
+   * ser alvo, o cursor mostra "proibido" e nao ha destaque - a Geral nao aceita
+   * envio, e a tela diz isso pelo gesto, nao por uma mensagem depois do erro.
+   */
+  function alvoDeSolta(escopo, caminho, gravavel) {
+    if (!gravavel) return {};
+    const k = chaveDe(escopo, caminho);
     return {
       onDragOver: (e) => {
         if (!arrastandoArquivo(e) || enviando) return;
         e.preventDefault();
         e.stopPropagation();
-        setAlvoSoltar(caminho);
+        setAlvoSoltar(k);
       },
       onDragLeave: (e) => {
         e.stopPropagation();
-        setAlvoSoltar((a) => (a === caminho ? null : a));
+        setAlvoSoltar((a) => (a === k ? null : a));
       },
       onDrop: async (e) => {
         if (!arrastandoArquivo(e)) return;
         e.preventDefault();
         e.stopPropagation();
         setAlvoSoltar(null);
-        // Coleta SINCRONA: ver a nota em "Leitura do que foi arrastado".
         const coletado = coletarDoEvento(e);
         const itens = await resolverSoltos(coletado);
-        if (itens.length) enviarPara(itens, caminho);
+        if (itens.length) enviarPara(itens, escopo, caminho);
         else toast.error(t('envio.falhou'));
       },
     };
   }
 
-  /* ---- ZIP de pasta ------------------------------------------------------ */
+  /* ---- ZIP --------------------------------------------------------------- */
 
-  async function baixarPasta(sub, rotulo) {
+  async function baixarPasta(escopo, sub, rotulo) {
     if (zip) return;
-
     const controlador = new AbortController();
     abortarZip.current = controlador;
     setZip({ feitos: 0, total: 0, arquivo: '', rotulo });
 
     try {
       const r = await baixarPastaZip(
-        projetoId,
-        sub,
-        rotulo,
+        escopo, sub, rotulo,
         (p) => setZip((atual) => (atual ? { ...atual, ...p } : atual)),
         controlador.signal,
       );
 
-      if (controlador.signal.aborted) {
-        toast.info(t('zip.cancelado'));
-      } else if (r.total === 0) {
+      if (controlador.signal.aborted) toast.info(t('zip.cancelado'));
+      else if (r.total === 0) {
         toast.info(t('zip.semArquivos'), {
           description: r.ignorados ? t('zip.somenteVisualizacao', { n: r.ignorados }) : undefined,
         });
@@ -331,17 +337,13 @@ export default function Arquivos({ sessao, aoSair }) {
     }
   }
 
-  /* ---- Download em demonstracao ------------------------------------------ */
-
-  async function baixarNoDemo(caminho, nome) {
+  async function baixarNoDemo(escopo, caminho, nome) {
     try {
-      const resposta = await baixarBytes(projetoId, caminho);
+      const resposta = await baixarBytes(escopo, caminho);
       const blob = await resposta.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      // .txt porque o conteudo ficticio e texto: salvar como .pdf faria o leitor
-      // de PDF acusar corrupcao e parecer defeito nosso.
       link.download = `${nome}.txt`;
       document.body.appendChild(link);
       link.click();
@@ -355,51 +357,46 @@ export default function Arquivos({ sessao, aoSair }) {
 
   /* ---- Árvore ------------------------------------------------------------ */
 
-  function linhas(itens, profundidade, pai) {
+  function linhas(escopo, gravavel, itens, profundidade, pai) {
     return (itens ?? []).flatMap((item) => {
       const caminho = pai ? `${pai}/${item.nome}` : item.nome;
+      const k = chaveDe(escopo, caminho);
       const recuo = 8 + profundidade * 14;
 
       if (item.tipo === 'pasta') {
-        const aberta = abertas.has(caminho);
-        const ocupada = ocupadas.has(caminho);
-        const filhos = conteudo[caminho];
-        const sobrePasta = alvoSoltar === caminho;
-        const ehAtual = pastaAtual === caminho;
+        const aberta = abertas.has(k);
+        const ocupada = ocupadas.has(k);
+        const filhos = conteudo[k];
+        const sobre = alvoSoltar === k;
+        const ehAtual = pastaAtual?.escopo === escopo && pastaAtual?.caminho === caminho;
 
         const linha = (
           <li
-            key={caminho}
+            key={k}
             className={`group flex items-center rounded-md transition ${
-              sobrePasta ? 'bg-[#F48126]/15 ring-2 ring-inset ring-[#F48126]' : ''
+              sobre ? 'bg-[#F48126]/15 ring-2 ring-inset ring-[#F48126]' : ''
             }`}
-            {...alvoDeSolta(caminho)}
+            {...alvoDeSolta(escopo, caminho, gravavel)}
           >
             <button
               type="button"
-              onClick={() => alternarPasta(caminho)}
+              onClick={() => alternarPasta(escopo, caminho, gravavel)}
               aria-expanded={aberta}
-              title={sobrePasta ? t('envio.soltarNaPasta', { nome: item.nome }) : item.nome}
               style={{ paddingLeft: `${recuo}px` }}
               className={`flex items-center gap-1.5 flex-1 min-w-0 py-1.5 pr-2 text-left rounded-md transition ${
-                sobrePasta ? '' : ehAtual ? 'bg-[#F4F6F4]' : 'hover:bg-[#F4F6F4]'
+                sobre ? '' : ehAtual ? 'bg-[#F4F6F4]' : 'hover:bg-[#F4F6F4]'
               }`}
             >
               <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[#8A9990]">
                 {ocupada ? <Loader2 size={12} className="animate-spin" />
-                  : aberta ? <ChevronDown size={13} />
-                  : <ChevronRight size={13} />}
+                  : aberta ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               </span>
-              {sobrePasta
-                ? <FolderInput size={14} className="text-[#F48126] shrink-0" />
-                : aberta
-                  ? <FolderOpen size={14} className="text-[#C98A2B] shrink-0" />
-                  : <Folder size={14} className="text-[#C98A2B] shrink-0" />}
-              <span
-                className={`text-[13px] truncate ${
-                  sobrePasta ? 'text-[#8A5A12] font-semibold' : 'font-medium text-[#1A2B1F]'
-                }`}
-              >
+              {sobre ? <FolderInput size={14} className="text-[#F48126] shrink-0" />
+                : aberta ? <FolderOpen size={14} className="text-[#C98A2B] shrink-0" />
+                : <Folder size={14} className="text-[#C98A2B] shrink-0" />}
+              <span className={`text-[13px] truncate ${
+                sobre ? 'text-[#8A5A12] font-semibold' : 'font-medium text-[#1A2B1F]'
+              }`}>
                 {item.nome}
               </span>
             </button>
@@ -412,7 +409,7 @@ export default function Arquivos({ sessao, aoSair }) {
               rotuloAcessivel={t('docs.baixarPastaItem', { nome: item.nome })}
               desabilitado={Boolean(zip)}
               className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 shrink-0"
-              onClick={() => baixarPasta(caminho, item.nome)}
+              onClick={() => baixarPasta(escopo, caminho, item.nome)}
             />
           </li>
         );
@@ -421,48 +418,40 @@ export default function Arquivos({ sessao, aoSair }) {
           aberta && filhos !== undefined
             ? filhos.length === 0
               ? [
-                  <li
-                    key={`${caminho}::vazia`}
-                    style={{ paddingLeft: `${recuo + 32}px` }}
-                    className="py-1.5 text-[12px] text-[#8A9990] italic"
-                  >
+                  <li key={`${k}::vazia`} style={{ paddingLeft: `${recuo + 32}px` }}
+                    className="py-1.5 text-[12px] text-[#8A9990] italic">
                     {t('docs.pastaVazia')}
                   </li>,
                 ]
-              : linhas(filhos, profundidade + 1, caminho)
+              : linhas(escopo, gravavel, filhos, profundidade + 1, caminho)
             : [];
 
         return [linha, ...filhosRender];
       }
 
       const soVer = item.nivel === 'visualizar';
-      const ativo = selecionado?.caminho === caminho;
+      const ativo = selecionado?.escopo === escopo && selecionado?.caminho === caminho;
 
       return [
-        <li key={caminho} className="group flex items-center">
+        <li key={k} className="group flex items-center">
           <button
             type="button"
             aria-current={ativo ? 'true' : undefined}
-            onClick={() => setSelecionado({ ...item, caminho })}
+            onClick={() => setSelecionado({ ...item, escopo, caminho })}
             style={{ paddingLeft: `${recuo + 18}px` }}
             className={`flex items-center gap-2 flex-1 min-w-0 py-1.5 pr-2 text-left rounded-md transition ${
               ativo ? 'bg-[#1A4731]/10 ring-1 ring-inset ring-[#1A4731]/25' : 'hover:bg-[#F4F6F4]'
             }`}
           >
             <IconeDoArquivo nome={item.nome} />
-            <span
-              className={`text-[13px] truncate ${
-                ativo ? 'text-[#1A4731] font-medium' : 'text-[#1A2B1F]'
-              }`}
-            >
+            <span className={`text-[13px] truncate ${
+              ativo ? 'text-[#1A4731] font-medium' : 'text-[#1A2B1F]'
+            }`}>
               {item.nome}
             </span>
             <span className="text-[10px] text-[#8A9990] ml-auto shrink-0 tabular-nums">
               {fmtTamanho(item.tamanho)}
             </span>
-            {/* Cadeado em vez de selo escrito: numa lista densa o texto "Só
-                visualizar" em toda linha viraria ruido. O selo por extenso
-                aparece no cabecalho do visualizador, onde ha espaco. */}
             {soVer && (
               <Lock size={11} className="text-[#1F4A6B] shrink-0" aria-label={t('docs.soVisualizar')} />
             )}
@@ -477,8 +466,8 @@ export default function Arquivos({ sessao, aoSair }) {
               rotuloAcessivel={t('docs.baixarItem', { nome: item.nome })}
               className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 shrink-0"
               {...(emDemo
-                ? { onClick: () => baixarNoDemo(caminho, item.nome) }
-                : { como: 'externo', href: urlArquivo(projetoId, caminho, 'download') })}
+                ? { onClick: () => baixarNoDemo(escopo, caminho, item.nome) }
+                : { como: 'externo', href: urlArquivo(escopo, caminho, 'download') })}
             />
           )}
         </li>,
@@ -486,20 +475,89 @@ export default function Arquivos({ sessao, aoSair }) {
     });
   }
 
+  /** Um no de topo por escopo: a Geral e a pasta do projeto. */
+  function raizDoEscopo(escopo) {
+    const id = escopo.projeto_id;
+    const gravavel = !escopo.somenteLeitura;
+    const k = chaveDe(id);
+    const aberta = abertas.has(k);
+    const sobre = alvoSoltar === k;
+    const itens = raizes[id];
+
+    return (
+      <li key={k} className="mb-1">
+        <div
+          className={`group flex items-center rounded-md transition ${
+            sobre ? 'bg-[#F48126]/15 ring-2 ring-inset ring-[#F48126]' : ''
+          }`}
+          {...alvoDeSolta(id, '', gravavel)}
+        >
+          <button
+            type="button"
+            onClick={() => alternarPasta(id, '', gravavel)}
+            aria-expanded={aberta}
+            title={escopo.somenteLeitura ? t('geral.explica') : escopo.empresa}
+            className="flex items-center gap-1.5 flex-1 min-w-0 py-1.5 px-2 text-left rounded-md
+              hover:bg-[#F4F6F4] transition"
+          >
+            <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[#8A9990]">
+              {aberta ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </span>
+            {escopo.somenteLeitura
+              ? <Globe2 size={15} className="text-[#1F4A6B] shrink-0" />
+              : <FolderOpen size={15} className="text-[#1A4731] shrink-0" />}
+            <span className="text-[13px] font-semibold text-[#1A2B1F] truncate">
+              {escopo.empresa}
+            </span>
+            {escopo.somenteLeitura && (
+              <Lock size={11} className="text-[#1F4A6B] shrink-0" aria-label={t('geral.explica')} />
+            )}
+          </button>
+
+          <BotaoSecundario
+            variante="fantasma"
+            icone={FolderArchive}
+            tamanho="sm"
+            titulo={t('docs.baixarTudo')}
+            rotuloAcessivel={t('docs.baixarTudo')}
+            desabilitado={Boolean(zip) || !itens?.length}
+            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 shrink-0"
+            onClick={() => baixarPasta(id, '', escopo.empresa)}
+          />
+        </div>
+
+        {escopo.somenteLeitura && aberta && (
+          <p className="text-[10px] text-[#5C7060] px-2 pl-9 pb-1 leading-snug">
+            {t('geral.explica')}
+          </p>
+        )}
+
+        {aberta && (
+          itens === undefined ? (
+            <div className="pl-9 py-2"><Carregando linha rotulo={t('docs.carregando')} /></div>
+          ) : itens.length === 0 ? (
+            <p className="pl-11 py-1.5 text-[12px] text-[#8A9990] italic">{t('docs.pastaVazia')}</p>
+          ) : (
+            <ul>{linhas(id, gravavel, itens, 1, '')}</ul>
+          )
+        )}
+      </li>
+    );
+  }
+
   /* ---- Render ------------------------------------------------------------ */
 
   const arquivoAberto = selecionado
     ? {
         ...selecionado,
-        aoBaixar: emDemo ? () => baixarNoDemo(selecionado.caminho, selecionado.nome) : null,
+        aoBaixar: emDemo
+          ? () => baixarNoDemo(selecionado.escopo, selecionado.caminho, selecionado.nome)
+          : null,
       }
     : null;
 
-  const sobreRaiz = alvoSoltar === '';
-
   return (
     <div className="h-screen flex flex-col bg-[#F4F6F4] overflow-hidden">
-      {/* ---- Cabecalho ---- */}
       <header className="bg-[#1A4731] text-white flex-shrink-0">
         <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
           <img
@@ -534,25 +592,6 @@ export default function Arquivos({ sessao, aoSair }) {
             <LogOut size={13} /> <span className="hidden sm:inline">{t('nav.sair')}</span>
           </button>
         </div>
-
-        {projetos.length > 1 && (
-          <div className="px-4 pb-2 flex items-center gap-1.5 flex-wrap">
-            {projetos.map((p) => (
-              <button
-                key={p.projeto_id}
-                type="button"
-                onClick={() => setProjetoId(p.projeto_id)}
-                className={`text-xs font-medium px-3 py-1 rounded-lg transition ${
-                  p.projeto_id === projetoId
-                    ? 'bg-white text-[#1A4731]'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                {p.ap_os ? `${p.ap_os} · ` : ''}{p.empresa}
-              </button>
-            ))}
-          </div>
-        )}
       </header>
 
       {MODO_DEMO && sessao.demo && (
@@ -564,27 +603,16 @@ export default function Arquivos({ sessao, aoSair }) {
         </div>
       )}
 
-      {/* ---- Duas colunas ---- */}
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(300px,32%)_1fr]">
-        {/* Coluna 1: arvore */}
         <aside
           className={`h-full min-h-0 flex-col border-r border-[#DDE3DE] bg-white ${
             selecionado ? 'hidden lg:flex' : 'flex'
           }`}
         >
           <div className="flex items-center gap-1 px-3 py-2 border-b border-[#DDE3DE] flex-shrink-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8A9990] flex-1 truncate">
-              {projeto?.empresa ?? t('visual.arquivos')}
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8A9990] flex-1">
+              {t('visual.arquivos')}
             </p>
-            <BotaoSecundario
-              variante="fantasma"
-              icone={FolderArchive}
-              tamanho="sm"
-              titulo={t('docs.baixarTudo')}
-              rotuloAcessivel={t('docs.baixarTudo')}
-              desabilitado={Boolean(zip) || !raiz?.length}
-              onClick={() => baixarPasta('', projeto?.empresa ?? 'documents')}
-            />
             <BotaoSecundario
               variante="fantasma"
               icone={RefreshCw}
@@ -592,7 +620,7 @@ export default function Arquivos({ sessao, aoSair }) {
               carregando={carregando}
               titulo={t('docs.atualizar')}
               rotuloAcessivel={t('docs.atualizar')}
-              onClick={carregarRaiz}
+              onClick={carregarTudo}
             />
           </div>
 
@@ -605,11 +633,8 @@ export default function Arquivos({ sessao, aoSair }) {
               />
               <div className="flex items-center justify-between gap-2 mt-1.5">
                 <span className="text-[10px] text-[#8A5A12] leading-snug">{t('zip.aviso')}</span>
-                <BotaoSecundario
-                  variante="perigo"
-                  tamanho="sm"
-                  onClick={() => abortarZip.current?.abort()}
-                >
+                <BotaoSecundario variante="perigo" tamanho="sm"
+                  onClick={() => abortarZip.current?.abort()}>
                   {t('zip.cancelar')}
                 </BotaoSecundario>
               </div>
@@ -620,82 +645,69 @@ export default function Arquivos({ sessao, aoSair }) {
             <p className="px-3 py-2 border-b border-[#DDE3DE] bg-[#1A4731]/5 text-[11px]
               text-[#1A4731] flex items-center gap-2 flex-shrink-0">
               <Loader2 size={13} className="animate-spin shrink-0" />
-              {t('envio.enviando', {
-                n: enviando.n,
-                nome: rotuloPasta(enviando.destino),
-              })}
+              {t('envio.enviando', { n: enviando.n, nome: rotuloDestino(enviando.destino) })}
             </p>
           )}
 
-          {/* O fundo da arvore tambem e alvo: soltar aqui envia para a raiz. */}
-          <div
-            {...alvoDeSolta('')}
-            className={`flex-1 min-h-0 overflow-auto py-1.5 px-1.5 transition ${
-              sobreRaiz ? 'bg-[#F48126]/10 ring-2 ring-inset ring-[#F48126]' : ''
-            }`}
-          >
+          <div className="flex-1 min-h-0 overflow-auto py-1.5 px-1.5">
             {carregando ? (
               <div className="p-6"><Carregando rotulo={t('docs.carregando')} /></div>
             ) : erro ? (
               <div className="p-3">
                 <AvisoDiscreto tom="vermelho" titulo={t('docs.erro')}>{erro}</AvisoDiscreto>
               </div>
-            ) : (raiz ?? []).length === 0 ? (
+            ) : escopos.length === 0 ? (
               <div className="p-3">
-                <EstadoVazio
-                  compacto
-                  icone={Inbox}
-                  titulo={t('docs.vazioTitulo')}
-                  texto={t('docs.vazioTexto')}
-                />
+                <EstadoVazio compacto icone={Inbox}
+                  titulo={t('docs.vazioTitulo')} texto={t('docs.vazioTexto')} />
               </div>
             ) : (
-              <ul>{linhas(raiz, 0, '')}</ul>
+              <ul>{escopos.map(raizDoEscopo)}</ul>
             )}
           </div>
 
-          {/* Barra de envio: diz PARA ONDE vai e abre o seletor de arquivos.
-              Arrastar continua sendo o caminho principal; isto atende quem
-              prefere clicar e quem usa teclado. */}
-          <div className="border-t border-[#DDE3DE] p-2 flex-shrink-0 bg-[#F4F6F4]/50">
-            <button
-              type="button"
-              disabled={Boolean(enviando)}
-              onClick={() => refInput.current?.click()}
-              className="w-full flex items-center gap-2 rounded-xl border border-dashed
-                border-[#DDE3DE] bg-white px-3 py-2 text-[12px] text-[#5C7060]
-                hover:border-[#1A4731]/40 hover:text-[#1A4731] transition
-                disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              <UploadCloud size={15} className="shrink-0" />
-              <span className="truncate">
-                {t('envio.destino', { nome: rotuloPasta(pastaAtual) })}
-              </span>
-            </button>
-            <input
-              ref={refInput}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                const itens = Array.from(e.target.files).map((arquivo) => ({
-                  arquivo,
-                  subPath: '',
-                }));
-                e.target.value = '';
-                if (itens.length) enviarPara(itens, pastaAtual);
-              }}
-            />
-          </div>
+          {/* O envio so existe se houver alguma pasta gravavel. Um cliente que so
+              tivesse a Geral nao veria uma barra que nunca funcionaria. */}
+          {escopoGravavel && (
+            <div className="border-t border-[#DDE3DE] p-2 flex-shrink-0 bg-[#F4F6F4]/50">
+              <button
+                type="button"
+                disabled={Boolean(enviando)}
+                onClick={() => refInput.current?.click()}
+                className="w-full flex items-center gap-2 rounded-xl border border-dashed
+                  border-[#DDE3DE] bg-white px-3 py-2 text-[12px] text-[#5C7060]
+                  hover:border-[#1A4731]/40 hover:text-[#1A4731] transition
+                  disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <UploadCloud size={15} className="shrink-0" />
+                <span className="truncate">
+                  {t('envio.destino', { nome: rotuloDestino(pastaAtual) })}
+                </span>
+              </button>
+              <input
+                ref={refInput}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const itens = Array.from(e.target.files).map((arquivo) => ({
+                    arquivo, subPath: '',
+                  }));
+                  e.target.value = '';
+                  const alvo = pastaAtual ?? { escopo: escopoGravavel.projeto_id, caminho: '' };
+                  if (itens.length) enviarPara(itens, alvo.escopo, alvo.caminho);
+                }}
+              />
+            </div>
+          )}
         </aside>
 
-        {/* Coluna 2: visualizador */}
         <section
           className={`h-full min-h-0 ${selecionado ? 'flex' : 'hidden lg:flex'} flex-col bg-white`}
         >
           <Visualizador
             arquivo={arquivoAberto}
-            projetoId={projetoId}
+            projetoId={selecionado?.escopo}
             emDemo={emDemo}
             tamanhoLegivel={fmtTamanho}
             aoVoltar={() => setSelecionado(null)}

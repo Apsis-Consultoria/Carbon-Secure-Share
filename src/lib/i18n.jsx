@@ -215,6 +215,10 @@ const TEXTOS = {
     'erro.senha_curta': 'The new password needs at least 12 characters.',
     'erro.senha_igual_a_atual': 'The new password must be different from the current one.',
     'erro.senha_atual_incorreta': 'Your current password is incorrect.',
+    'erro.pasta_somente_leitura':
+      'This folder is read only. Files here are published by APSIS.',
+    'geral.rotulo': 'Shared with everyone',
+    'geral.explica': 'Documents APSIS publishes for every client. Read only.',
     'erro.proxy_nao_configurado':
       'The system is not configured correctly. Please tell the APSIS person responsible for your project.',
     'erro.timeout': 'That took too long. Check your connection and try again.',
@@ -374,6 +378,10 @@ const TEXTOS = {
     'erro.senha_curta': 'A nova senha precisa de pelo menos 12 caracteres.',
     'erro.senha_igual_a_atual': 'A nova senha precisa ser diferente da atual.',
     'erro.senha_atual_incorreta': 'A senha atual está incorreta.',
+    'erro.pasta_somente_leitura':
+      'Esta pasta é somente leitura. Os arquivos aqui são publicados pela APSIS.',
+    'geral.rotulo': 'Compartilhado com todos',
+    'geral.explica': 'Documentos que a APSIS publica para todos os clientes. Somente leitura.',
     'erro.proxy_nao_configurado':
       'O sistema não está configurado corretamente. Avise a pessoa da APSIS responsável pelo seu projeto.',
     'erro.timeout': 'A operação demorou demais. Verifique a conexão e tente de novo.',

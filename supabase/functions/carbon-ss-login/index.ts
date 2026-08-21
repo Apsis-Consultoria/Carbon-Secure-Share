@@ -15,7 +15,8 @@
 
 import { tratarOptions, respostaErro, respostaJson } from '../_shared/cors.ts';
 import { obterAdmin } from '../_shared/supabase.ts';
-import { assinarSessao, type ProjetoSessao } from '../_shared/sessao.ts';
+import { assinarSessao, ID_GERAL, type ProjetoSessao } from '../_shared/sessao.ts';
+import { lerConfigSharePoint } from '../_shared/config.ts';
 
 const METODOS = 'POST, OPTIONS';
 
@@ -91,6 +92,33 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
 
     const nome = String(data.projetos?.[0]?.nome ?? '');
+
+    /*
+     * A pasta GERAL entra na sessao como se fosse mais um projeto, marcada como
+     * somente leitura.
+     *
+     * POR QUE ASSIM, e nao com um parametro `escopo` nas rotas: listar,
+     * visualizar, baixar e montar o ZIP passam a funcionar sem NENHUMA
+     * ramificacao - eles ja resolvem "o projeto do token". O unico lugar que
+     * precisa saber que a Geral e diferente e o envio, que a recusa. Um caminho
+     * a menos e um caminho a menos para esquecer de proteger.
+     *
+     * Ela so entra se o cliente tiver ao menos um projeto de verdade: quem nao
+     * tem acesso a projeto nenhum tambem nao deve ver a Geral.
+     */
+    if (projetos.length) {
+      const cfg = await lerConfigSharePoint();
+      if (cfg.pastaGeral) {
+        projetos.unshift({
+          projeto_id: ID_GERAL,
+          empresa: cfg.pastaGeral,
+          ap_os: null,
+          pasta: cfg.pastaGeral,
+          somenteLeitura: true,
+        });
+      }
+    }
+
     const token = await assinarSessao({ email, nome, projetos });
 
     return respostaJson({ token, projetos, nome }, 200, METODOS);

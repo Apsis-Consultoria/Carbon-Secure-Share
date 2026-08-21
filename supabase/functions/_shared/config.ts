@@ -34,6 +34,7 @@ const PADRAO: ConfigSharePoint = {
   sitePath: '/sites/Projetos',
   biblioteca: 'Secure Share',
   pastaBase: 'Apsis Carbon',
+  pastaGeral: 'Geral',
 };
 
 let cache: ConfigSharePoint | null = null;
@@ -61,6 +62,7 @@ export async function lerConfigSharePoint(): Promise<ConfigSharePoint> {
     // String vazia e valor VALIDO aqui (raiz da biblioteca), entao ela nao pode
     // cair no default pelo caminho de texto() acima.
     pastaBase: typeof valor.pastaBase === 'string' ? valor.pastaBase.trim() : PADRAO.pastaBase,
+    pastaGeral: texto('pastaGeral'),
   };
   return cache;
 }

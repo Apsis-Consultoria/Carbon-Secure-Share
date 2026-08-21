@@ -120,6 +120,14 @@ export type ConfigSharePoint = {
    * sempre caminhoNaBiblioteca() de _shared/config.ts para monta-lo.
    */
   pastaBase: string;
+  /**
+   * Pasta, dentro da base, visivel a TODOS os clientes ('Geral').
+   *
+   * Somente leitura para o cliente. Quem escreve nela e a equipe da APSIS, pelo
+   * Portal Carbon. Atencao operacional: o que entra aqui aparece para todos os
+   * clientes de todos os projetos.
+   */
+  pastaGeral: string;
 };
 
 const cacheDrive = new Map<string, string>();

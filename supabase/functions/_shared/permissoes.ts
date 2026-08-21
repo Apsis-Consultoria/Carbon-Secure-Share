@@ -4,6 +4,7 @@
 // A parte com I/O. A decisao em si vive em regrasPermissao.ts, que e pura.
 
 import { obterAdmin } from './supabase.ts';
+import { ID_GERAL } from './sessao.ts';
 import { montarResolvedor, type LinhaPermissao, type Resolvedor } from './regrasPermissao.ts';
 
 /**
@@ -22,6 +23,23 @@ export async function carregarPermissoes(
   projetoId: string,
   email: string,
 ): Promise<Resolvedor> {
+  /*
+   * A pasta GERAL nao tem restricao por item, POR DEFINICAO: ela existe para
+   * guardar o que todo cliente deve ver. Restringir um item dentro dela seria a
+   * contradicao do proposito - se e restrito, o lugar e a pasta do projeto.
+   *
+   * O desvio tambem e NECESSARIO, e nao so conceitual: ID_GERAL nao e um uuid,
+   * entao a consulta abaixo devolveria erro de tipo, cairia na falha fechada e
+   * a Geral ficaria INVISIVEL para todo mundo. Sem este atalho o recurso
+   * simplesmente nao funcionaria, e o sintoma seria uma pasta vazia sem erro.
+   *
+   * CONSEQUENCIA OPERACIONAL, que a equipe precisa entender: o que a APSIS
+   * colocar na Geral aparece para TODOS os clientes de TODOS os projetos.
+   */
+  if (projetoId === ID_GERAL) {
+    return { negado: () => false, somenteVer: () => false, nivel: () => 'total' };
+  }
+
   const admin = obterAdmin();
 
   const { data, error } = await admin

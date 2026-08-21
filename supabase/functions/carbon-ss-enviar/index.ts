@@ -28,7 +28,7 @@
 // descarta ".." e separadores: nao ha como escrever fora do projeto.
 
 import { tratarOptions, respostaErro, respostaJson } from '../_shared/cors.ts';
-import { extrairToken, verificarSessao, projetoAutorizado } from '../_shared/sessao.ts';
+import { extrairToken, verificarSessao, projetoAutorizado, ID_GERAL } from '../_shared/sessao.ts';
 import { lerConfigSharePoint, caminhoNaBiblioteca } from '../_shared/config.ts';
 import { ErroGraph, enviarArquivo, garantirPasta, temConfigAzure } from '../_shared/graph.ts';
 import { limparCaminho, limparNome } from '../_shared/caminho.ts';
@@ -58,8 +58,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return respostaErro('corpo_invalido', 400, METODOS);
     }
 
-    const projeto = projetoAutorizado(sessao, String(form.get('projeto_id') ?? ''));
+    const projetoIdPedido = String(form.get('projeto_id') ?? '');
+    const projeto = projetoAutorizado(sessao, projetoIdPedido);
     if (!projeto) return respostaErro('sem_acesso_ao_projeto', 403, METODOS);
+
+    /*
+     * A pasta GERAL e somente leitura para o cliente. Quem escreve nela e a
+     * equipe da APSIS, pelo Portal Carbon.
+     *
+     * DUAS checagens independentes de proposito: o id reservado (que nao pode
+     * ser forjado, porque vem do token assinado) e a flag. Se um dia a flag
+     * deixar de ser gravada por um bug no login, o id ainda barra; se o id
+     * mudar, a flag ainda barra. Um vazamento aqui significaria um cliente
+     * publicando arquivo na pasta que TODOS os outros clientes enxergam.
+     */
+    if (projetoIdPedido === ID_GERAL || projeto.projeto_id === ID_GERAL || projeto.somenteLeitura) {
+      return respostaErro('pasta_somente_leitura', 403, METODOS);
+    }
 
     if (!temConfigAzure()) return respostaErro('armazenamento_indisponivel', 503, METODOS);
 
