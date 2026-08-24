@@ -1,0 +1,63 @@
+# Configuracao do Supabase CLI para o Secure Share Carbon.
+# Referencia: https://supabase.com/docs/guides/cli/config
+#
+# project_id e o identificador LOCAL do projeto: ele so nomeia os containers do
+# "supabase start". NAO e o project ref do projeto hospedado, que vive fora do
+# repositorio e entra nos comandos por --project-ref. Confundir os dois coloca o
+# endereco do projeto no git, que e exatamente o que a regra 4 do CLAUDE.md
+# existe para impedir.
+project_id = "secure-share-carbon"
+
+# -----------------------------------------------------------------------------
+# TODAS as funcoes deste repositorio sobem com verify_jwt = false.
+# -----------------------------------------------------------------------------
+# Nao e relaxamento de seguranca: e que o Authorization NAO carrega um JWT do
+# Supabase Auth. Quem entra aqui e cliente externo, que nao tem conta no Supabase.
+# O portador e um token de sessao proprio, assinado com HMAC-SHA256 e validado por
+# verificarSessao() em supabase/functions/_shared/sessao.ts. A plataforma nao sabe
+# validar esse token: com verify_jwt = true ela devolveria 401 antes de o nosso
+# codigo rodar, e o portal do cliente ficaria inteiramente inacessivel.
+#
+# A autorizacao real acontece DEPOIS, dentro de cada funcao, e e mais estrita do
+# que o gateway seria: o projeto vem do TOKEN e nunca do parametro (regra 2 do
+# CLAUDE.md), e a permissao por item e resolvida no servidor com heranca de pasta.
+#
+# Este arquivo foi criado em 21/08/2026, depois de as seis funcoes ja terem sido
+# publicadas com a flag digitada na linha de comando. Existe para que a proxima
+# publicacao nao dependa de alguem lembrar da flag: sem ele, um
+# "functions deploy carbon-ss-login" seco subiria a funcao com verify_jwt = true
+# e todo cliente passaria a receber 401 da plataforma - uma falha que nao aparece
+# em nenhum teste do Portal, porque o Portal usa outras funcoes.
+#
+# Como conferir que uma funcao esta correta, sem sessao nenhuma:
+#   curl.exe -i -H "Accept: application/json" "https://<ref>.supabase.co/functions/v1/carbon-ss-login"
+# Corpo com a chave "erro" = respondeu o NOSSO codigo, esta certo.
+# Corpo com "code" e "message" e sem access-control-allow-origin = barrado pelo
+# gateway, republicar com --no-verify-jwt.
+
+# Emite o token de sessao a partir de e-mail e senha. Publica por definicao: e a
+# porta de entrada, chamada por quem ainda nao tem sessao.
+[functions.carbon-ss-login]
+verify_jwt = false
+
+# Troca de senha. Exige sessao valida, conferida por verificarSessao.
+[functions.carbon-ss-senha]
+verify_jwt = false
+
+# Lista um nivel de pasta. Projeto vindo do token, permissao por item no servidor.
+[functions.carbon-ss-listar]
+verify_jwt = false
+
+# Entrega o byte do arquivo, com marca d'agua quando for o caso. Todo download
+# passa por aqui de proposito: a downloadUrl do SharePoint e pre-autenticada e
+# nunca chega ao navegador (regra 1 do CLAUDE.md).
+[functions.carbon-ss-baixar]
+verify_jwt = false
+
+# Recebe arquivo do cliente. Recusa a pasta Geral, que e somente leitura para ele.
+[functions.carbon-ss-enviar]
+verify_jwt = false
+
+# Arvore completa de uma pasta, usada para montar o ZIP no navegador.
+[functions.carbon-ss-arvore]
+verify_jwt = false
