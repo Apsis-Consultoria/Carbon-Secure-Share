@@ -1,11 +1,20 @@
 // -----------------------------------------------------------------------------
 // Token de sessao assinado (HMAC-SHA256) do cliente externo.
 // -----------------------------------------------------------------------------
-// O cliente NAO tem conta no Azure AD: ele entra com e-mail e senha. Em vez de
-// confiar em "email/projeto" enviados pelo navegador a cada chamada, a funcao de
-// login emite um token assinado com SESSION_SECRET que ja carrega os projetos
-// autorizados. As demais funcoes so validam a assinatura e DERIVAM o projeto do
-// proprio token.
+// O cliente NAO tem conta no Azure AD: ele prova quem e apresentando um codigo
+// de uso unico que chegou na caixa de e-mail dele (carbon-ss-codigo pede,
+// carbon-ss-entrar troca por sessao). Em vez de confiar em "email/projeto"
+// enviados pelo navegador a cada chamada, quem emite a sessao assina um token com
+// SESSION_SECRET que ja carrega os projetos autorizados. As demais funcoes so
+// validam a assinatura e DERIVAM o projeto do proprio token.
+//
+// O FORMATO DO TOKEN NAO MUDOU com a saida da senha, e nada aqui precisou mudar:
+// o que mudou foi quem o emite. Ate o corte, carbon-ss-login (senha) tambem
+// emite, e os dois produzem exatamente o mesmo artefato.
+//
+// NAO acrescente um campo `origem` ao payload. Sem "lembrar este dispositivo" -
+// que esta fora de escopo por decisao do dono - ele nao distinguiria nada e viraria
+// mais um campo que alguem confunde com autorizacao.
 //
 // Foi assim que o secure_share fechou o IDOR original, e a regra continua valendo
 // aqui: nenhuma funcao aceita projeto vindo do corpo ou da query como verdade.
@@ -99,6 +108,18 @@ async function importarChave(): Promise<CryptoKey> {
 /**
  * Assina a sessao. TTL padrao de 8 horas: um dia util, sem obrigar o cliente a
  * relogar no meio de uma revisao de documentos.
+ *
+ * AS 8 HORAS CONTINUAM, e o navegador continua guardando o token em
+ * sessionStorage (src/lib/sessao.js), que morre quando a aba fecha. Isso e
+ * DECISAO, nao pendencia: o cliente externo costuma acessar de maquina
+ * compartilhada, e uma sessao sobrevivente ao fechamento da aba entrega a pasta
+ * de um projeto sob NDA a quem sentar na cadeira depois.
+ *
+ * Quem chegar aqui querendo "resolver" o incomodo de pedir codigo de novo:
+ * "lembrar este dispositivo" foi avaliado e ficou FORA DE ESCOPO por decisao do
+ * dono. Nao existe cookie de dispositivo, nao existe tabela para isso e nao ha
+ * nada meio-pronto esperando. Trocar sessionStorage por localStorage nao e a
+ * mesma coisa e nao e o que foi pedido.
  */
 export async function assinarSessao(
   dados: { email: string; nome: string; projetos: ProjetoSessao[] },
@@ -137,7 +158,13 @@ export async function verificarSessao(token: string): Promise<PayloadSessao | nu
     valida = await crypto.subtle.verify(
       'HMAC',
       chave,
-      b64urlDecodificar(assinatura),
+      // `as BufferSource`: a partir do TypeScript 5.7 o Uint8Array e generico no
+      // tipo do buffer (ArrayBufferLike, que inclui SharedArrayBuffer) e deixa de
+      // casar com BufferSource. O valor aqui e sempre um Uint8Array recem-criado
+      // sobre ArrayBuffer comum, entao a assercao nao esconde risco nenhum - sem
+      // ela, `deno check` reprova o arquivo inteiro e o typecheck de pre-deploy
+      // (passo obrigatorio: `functions deploy` nao faz typecheck) para de rodar.
+      b64urlDecodificar(assinatura) as BufferSource,
       codificador.encode(corpo),
     );
   } catch {

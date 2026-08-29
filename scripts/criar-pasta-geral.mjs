@@ -14,16 +14,15 @@
 //
 //   PowerShell (o Read-Host evita o segredo cair no historico do PSReadLine):
 //
-//     $env:AZURE_SECURE_SHARE_TENANT_ID     = Read-Host "Tenant ID"
-//     $env:AZURE_SECURE_SHARE_CLIENT_ID     = Read-Host "Client ID"
-//     $env:AZURE_SECURE_SHARE_CLIENT_SECRET = Read-Host "Client Secret"
+//     $env:AZURE_PORTAL_TENANT_ID     = Read-Host "Tenant ID"
+//     $env:AZURE_PORTAL_CLIENT_ID     = Read-Host "Client ID"
+//     $env:AZURE_PORTAL_CLIENT_SECRET = Read-Host "Client Secret"
 //     node scripts/criar-pasta-geral.mjs
 //
-// Aceita tambem o prefixo AZURE_PORTAL_* quando o do Secure Share nao estiver
-// no ambiente. Isto vale SO PARA ESTE SCRIPT, que roda a mao: nas Edge
-// Functions cada sistema le exclusivamente o seu prefixo, sem fallback, porque
-// os dois vivem no mesmo projeto Supabase e um secret ausente passaria a usar a
-// credencial do outro em silencio.
+// EXISTE UMA CREDENCIAL SO, desde 24/08/2026: AZURE_PORTAL_* sem prefixo, usada pelos
+// dois sistemas. Os nomes AZURE_PORTAL_* e AZURE_SECURE_SHARE_* foram unificados
+// porque passaram a guardar o mesmo valor, e dois nomes com o mesmo valor
+// aparentam um isolamento que nao existe.
 //
 // E IDEMPOTENTE. Rodar duas vezes nao duplica nem apaga nada: usa
 // conflictBehavior 'fail' e trata o 409 como "ja existe, tudo certo".
@@ -55,25 +54,14 @@ const caminhoSeg = (c) => c.split('/').filter(Boolean).map(encodeURIComponent).j
 async function main() {
   /* ===== Credenciais ====================================================== */
 
-  const usouPortal = !process.env.AZURE_SECURE_SHARE_CLIENT_ID;
-
-  const TENANT =
-    process.env.AZURE_SECURE_SHARE_TENANT_ID || process.env.AZURE_PORTAL_TENANT_ID;
-  const CLIENT =
-    process.env.AZURE_SECURE_SHARE_CLIENT_ID || process.env.AZURE_PORTAL_CLIENT_ID;
-  const SEGREDO =
-    process.env.AZURE_SECURE_SHARE_CLIENT_SECRET || process.env.AZURE_PORTAL_CLIENT_SECRET;
+  const { AZURE_PORTAL_TENANT_ID: TENANT, AZURE_PORTAL_CLIENT_ID: CLIENT, AZURE_PORTAL_CLIENT_SECRET: SEGREDO } =
+    process.env;
 
   if (!TENANT || !CLIENT || !SEGREDO) {
     erro('Faltam as credenciais no ambiente.');
     dica('Veja o cabecalho deste arquivo para o comando do seu terminal.');
     process.exitCode = 1;
     return;
-  }
-
-  if (usouPortal) {
-    aviso('Usando a credencial do Portal (AZURE_PORTAL_*), nao a do Secure Share.');
-    dica('Serve para criar a pasta. As Edge Functions continuam com o prefixo proprio.');
   }
 
   /* ===== Token ============================================================ */

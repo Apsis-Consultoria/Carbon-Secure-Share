@@ -3,7 +3,6 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 
 import Login from '@/pages/Login';
 import Arquivos from '@/pages/Arquivos';
-import TrocarSenha from '@/pages/TrocarSenha';
 import { entrarDemo } from '@/lib/api';
 import { MODO_DEMO } from '@/lib/demo';
 import { gravarSessao, lerSessao, limparSessao } from '@/lib/sessao';
@@ -94,7 +93,9 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Arquivos sessao={sessao} aoSair={sair} />} />
-      <Route path="/senha" element={<TrocarSenha aoSair={sair} />} />
+      {/* Nao existe mais rota /senha. Ela levava a TrocarSenha, que sumiu junto
+          com a senha em 24/08/2026: o cliente entra por codigo de uso unico no
+          e-mail, e nao ha credencial permanente para ele trocar. */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

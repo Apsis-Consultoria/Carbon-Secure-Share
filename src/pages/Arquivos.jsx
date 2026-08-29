@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Folder, FolderOpen, ChevronRight, ChevronDown, Download, Loader2, RefreshCw, LogOut,
-  KeyRound, UploadCloud, FileText, FileSpreadsheet, Image as IconeImagem, Globe2,
+  UploadCloud, FileText, FileSpreadsheet, Image as IconeImagem, Globe2,
   File as IconeArquivo, FolderArchive, Lock, Inbox, FlaskConical, FolderInput,
 } from 'lucide-react';
 
@@ -575,13 +574,6 @@ export default function Arquivos({ sessao, aoSair }) {
 
           <SeletorIdioma variante="escuro" />
 
-          <Link
-            to="/senha"
-            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg
-              border border-white/25 hover:bg-white/10 transition"
-          >
-            <KeyRound size={13} /> <span className="hidden sm:inline">{t('nav.trocarSenha')}</span>
-          </Link>
 
           <button
             type="button"

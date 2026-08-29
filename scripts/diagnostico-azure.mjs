@@ -13,16 +13,16 @@
 //
 //   PowerShell (o Read-Host evita o segredo cair no historico do PSReadLine):
 //
-//     $env:AZURE_SECURE_SHARE_TENANT_ID     = Read-Host "Tenant ID"
-//     $env:AZURE_SECURE_SHARE_CLIENT_ID     = Read-Host "Client ID"
-//     $env:AZURE_SECURE_SHARE_CLIENT_SECRET = Read-Host "Client Secret"
+//     $env:AZURE_PORTAL_TENANT_ID     = Read-Host "Tenant ID"
+//     $env:AZURE_PORTAL_CLIENT_ID     = Read-Host "Client ID"
+//     $env:AZURE_PORTAL_CLIENT_SECRET = Read-Host "Client Secret"
 //     node scripts/diagnostico-azure.mjs --escrita
 //
 //   Git Bash:
 //
-//     read -s -p "Client Secret: " AZURE_SECURE_SHARE_CLIENT_SECRET
-//     export AZURE_SECURE_SHARE_CLIENT_SECRET
-//     export AZURE_SECURE_SHARE_TENANT_ID=...; export AZURE_SECURE_SHARE_CLIENT_ID=...
+//     read -s -p "Client Secret: " AZURE_PORTAL_CLIENT_SECRET
+//     export AZURE_PORTAL_CLIENT_SECRET
+//     export AZURE_PORTAL_TENANT_ID=...; export AZURE_PORTAL_CLIENT_ID=...
 //     node scripts/diagnostico-azure.mjs --escrita
 //
 // Por padrao faz SOMENTE LEITURA. Para incluir o teste de escrita (cria uma
@@ -31,7 +31,7 @@
 //     node scripts/diagnostico-azure.mjs --escrita
 //
 // ESTE DIAGNOSTICO E DO APP DO PORTAL DO CLIENTE. Sao DOIS registros no Azure,
-// um por sistema, e por isso os secrets tem prefixo: AZURE_SECURE_SHARE_* aqui,
+// um por sistema, e por isso os secrets tem prefixo: AZURE_PORTAL_* aqui,
 // AZURE_PORTAL_* no Portal Apsis Carbon. Os dois rodam no mesmo projeto
 // Supabase, onde secret e por projeto: sem prefixo, um usaria a credencial do
 // outro em silencio.
@@ -53,9 +53,9 @@ const SP_PASTA_BASE = process.env.SP_PASTA_BASE ?? 'Apsis Carbon';
 const TESTAR_ESCRITA = process.argv.includes('--escrita');
 
 const {
-  AZURE_SECURE_SHARE_TENANT_ID: AZURE_TENANT_ID,
-  AZURE_SECURE_SHARE_CLIENT_ID: AZURE_CLIENT_ID,
-  AZURE_SECURE_SHARE_CLIENT_SECRET: AZURE_CLIENT_SECRET,
+  AZURE_PORTAL_TENANT_ID: AZURE_PORTAL_TENANT_ID,
+  AZURE_PORTAL_CLIENT_ID: AZURE_PORTAL_CLIENT_ID,
+  AZURE_PORTAL_CLIENT_SECRET: AZURE_PORTAL_CLIENT_SECRET,
 } = process.env;
 
 let falhou = false;
@@ -92,9 +92,9 @@ async function main() {
 titulo('1. Credenciais no ambiente');
 
 const faltando = [
-  !AZURE_TENANT_ID && 'AZURE_SECURE_SHARE_TENANT_ID',
-  !AZURE_CLIENT_ID && 'AZURE_SECURE_SHARE_CLIENT_ID',
-  !AZURE_CLIENT_SECRET && 'AZURE_SECURE_SHARE_CLIENT_SECRET',
+  !AZURE_PORTAL_TENANT_ID && 'AZURE_PORTAL_TENANT_ID',
+  !AZURE_PORTAL_CLIENT_ID && 'AZURE_PORTAL_CLIENT_ID',
+  !AZURE_PORTAL_CLIENT_SECRET && 'AZURE_PORTAL_CLIENT_SECRET',
 ].filter(Boolean);
 
 if (faltando.length) {
@@ -104,12 +104,12 @@ if (faltando.length) {
   return;
 }
 
-ok(`Tenant  ${AZURE_TENANT_ID}`);
-ok(`Client  ${AZURE_CLIENT_ID}`);
+ok(`Tenant  ${AZURE_PORTAL_TENANT_ID}`);
+ok(`Client  ${AZURE_PORTAL_CLIENT_ID}`);
 // Do segredo mostramos apenas o comprimento: o suficiente para pegar o erro mais
 // comum (colar o ID do segredo em vez do VALOR dele), sem revelar o conteudo.
-ok(`Secret  ${AZURE_CLIENT_SECRET.length} caracteres`);
-if (AZURE_CLIENT_SECRET.length < 30) {
+ok(`Secret  ${AZURE_PORTAL_CLIENT_SECRET.length} caracteres`);
+if (AZURE_PORTAL_CLIENT_SECRET.length < 30) {
   aviso('Segredo curto demais para um client secret do Azure.');
   dica('No portal, o campo que serve e o "Value", nao o "Secret ID".');
 }
@@ -121,13 +121,13 @@ titulo('2. Token de aplicativo (client credentials)');
 let token;
 try {
   const resposta = await fetch(
-    `https://login.microsoftonline.com/${encodeURIComponent(AZURE_TENANT_ID)}/oauth2/v2.0/token`,
+    `https://login.microsoftonline.com/${encodeURIComponent(AZURE_PORTAL_TENANT_ID)}/oauth2/v2.0/token`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: AZURE_CLIENT_ID,
-        client_secret: AZURE_CLIENT_SECRET,
+        client_id: AZURE_PORTAL_CLIENT_ID,
+        client_secret: AZURE_PORTAL_CLIENT_SECRET,
         scope: 'https://graph.microsoft.com/.default',
         grant_type: 'client_credentials',
       }),
@@ -358,8 +358,8 @@ if (falhou) {
 
 console.log('A credencial de aplicativo funciona e alcanca a biblioteca certa.');
 console.log('Proximo passo: gravar os mesmos tres valores como secrets das Edge');
-console.log('Functions no Supabase, com os nomes AZURE_SECURE_SHARE_TENANT_ID,');
-console.log('AZURE_SECURE_SHARE_CLIENT_ID e AZURE_SECURE_SHARE_CLIENT_SECRET.');
+console.log('Functions no Supabase, com os nomes AZURE_PORTAL_TENANT_ID,');
+console.log('AZURE_PORTAL_CLIENT_ID e AZURE_PORTAL_CLIENT_SECRET.');
 console.log('Nunca em arquivo do repositorio.');
 
 }

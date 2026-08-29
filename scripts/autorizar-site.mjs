@@ -25,9 +25,9 @@
 // 2. Rode este script. Ele autoriza no site os apps que voce listar.
 //
 //    PowerShell:
-//      $env:AZURE_SECURE_SHARE_TENANT_ID     = Read-Host "Tenant ID"
-//      $env:AZURE_SECURE_SHARE_CLIENT_ID     = Read-Host "Client ID (bootstrap)"
-//      $env:AZURE_SECURE_SHARE_CLIENT_SECRET = Read-Host "Client Secret (bootstrap)"
+//      $env:AZURE_PORTAL_TENANT_ID     = Read-Host "Tenant ID"
+//      $env:AZURE_PORTAL_CLIENT_ID     = Read-Host "Client ID (bootstrap)"
+//      $env:AZURE_PORTAL_CLIENT_SECRET = Read-Host "Client Secret (bootstrap)"
 //      node scripts/autorizar-site.mjs `
 //        --app "<client-id>=<nome que aparece na permissao>" `
 //        --app "<outro-client-id>=<outro nome>"
@@ -49,9 +49,9 @@ const SP_HOST = process.env.SP_HOST || 'apsisconsult.sharepoint.com';
 const SP_SITE_PATH = process.env.SP_SITE_PATH || '/sites/Projetos';
 
 const {
-  AZURE_SECURE_SHARE_TENANT_ID: TENANT,
-  AZURE_SECURE_SHARE_CLIENT_ID: CLIENT_ID,
-  AZURE_SECURE_SHARE_CLIENT_SECRET: CLIENT_SECRET,
+  AZURE_PORTAL_TENANT_ID: TENANT,
+  AZURE_PORTAL_CLIENT_ID: CLIENT_ID,
+  AZURE_PORTAL_CLIENT_SECRET: CLIENT_SECRET,
 } = process.env;
 
 const cor = (c, s) => `\x1b[${c}m${s}\x1b[0m`;
@@ -86,9 +86,9 @@ async function main() {
   titulo('1. Credenciais do app de bootstrap');
 
   const faltando = [
-    !TENANT && 'AZURE_SECURE_SHARE_TENANT_ID',
-    !CLIENT_ID && 'AZURE_SECURE_SHARE_CLIENT_ID',
-    !CLIENT_SECRET && 'AZURE_SECURE_SHARE_CLIENT_SECRET',
+    !TENANT && 'AZURE_PORTAL_TENANT_ID',
+    !CLIENT_ID && 'AZURE_PORTAL_CLIENT_ID',
+    !CLIENT_SECRET && 'AZURE_PORTAL_CLIENT_SECRET',
   ].filter(Boolean);
 
   if (faltando.length) {

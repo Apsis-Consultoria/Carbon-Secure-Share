@@ -4,9 +4,10 @@ import {
   demoArvore,
   demoBaixar,
   demoEntrar,
+  demoEntrarComCodigo,
   demoEnviar,
   demoListar,
-  demoTrocarSenha,
+  demoPedirCodigo,
 } from '@/lib/demo';
 import { lerSessao, limparSessao } from '@/lib/sessao';
 
@@ -33,13 +34,71 @@ import { lerSessao, limparSessao } from '@/lib/sessao';
 const TIMEOUT_MS = 20000;
 
 export class ErroApi extends Error {
-  constructor(codigo, { status = null, detalhe = null, mensagem = null } = {}) {
+  constructor(codigo, { status = null, detalhe = null, mensagem = null, espere = null } = {}) {
     super(mensagem || codigo || 'erro_api');
     this.name = 'ErroApi';
     this.codigo = codigo;
     this.status = status;
     this.detalhe = detalhe;
+    /**
+     * Segundos que o servidor pediu para esperar antes do proximo pedido de
+     * codigo. So o freio de reenvio preenche isto; nas demais falhas fica null.
+     * E numero, e nao texto: quem o consome e um contador regressivo.
+     */
+    this.espere = espere;
   }
+}
+
+/* ===== Codigo de entrada ================================================== */
+
+/**
+ * Quantos digitos tem o codigo que chega por e-mail.
+ *
+ * ESTA CONSTANTE MANDA NA SEGURANCA DA ENTRADA. A conta, para ninguem
+ * "simplificar" depois:
+ *
+ *   espaco de busca            10^6 = 1.000.000 combinacoes
+ *   palpites por codigo vivo   5 (carbon_secure_share_conferir_codigo)
+ *   codigos vivos por endereco ate 3 (p_vivos de carbon_secure_share_codigo_registrar)
+ *   pedidos por endereco/dia   20 (p_teto_dia de carbon_secure_share_pedido_registrar)
+ *
+ * Com 5 pedidos por dia na caixa da vitima (ataque ja barulhento), sao 25
+ * palpites por dia: 25/10^6 por dia, cerca de 1% de chance por endereco por ano.
+ * Com o teto diario cheio, 20 pedidos, sao 100 palpites por dia e a conta sobe
+ * para cerca de 3,6% ao ano.
+ *
+ * Ou seja: com 6 digitos o TETO DIARIO NAO E CONFORTO, E DEFESA. Nao aumente o
+ * teto sem refazer esta conta; se precisar de folga, aumente os digitos - cada
+ * digito a mais divide a chance por dez. Foram 6 por decisao do dono; o plano
+ * recomendava 8.
+ *
+ * ATENCAO: existe uma SEGUNDA copia deste numero em
+ * supabase/functions/_shared/otp.ts (Deno, outro runtime, sem import possivel
+ * daqui). As duas precisam bater. Se o servidor gerar mais digitos do que o
+ * campo aceita, ninguem entra e o sintoma e "codigo invalido" para todo mundo.
+ */
+export const DIGITOS_CODIGO = 6;
+
+/** Validade do codigo, quando o servidor nao disser outra. Espelha p_minutos. */
+export const MINUTOS_CODIGO_PADRAO = 10;
+
+/** Freio entre dois pedidos, quando o servidor nao disser outro. Espelha p_seg_freio. */
+export const SEGUNDOS_REENVIO_PADRAO = 60;
+
+/** Teto do contador regressivo, em segundos. Ver normalizarEspera(). */
+const ESPERA_MAXIMA_S = 15 * 60;
+
+/**
+ * Traz o `espere` do servidor para uma faixa que faz sentido na tela.
+ *
+ * Existe porque o numero vem de fora e alimenta um contador: um valor absurdo
+ * (negativo, texto, 10^9) travaria o botao de reenvio para sempre sem nenhum
+ * aviso, e a pessoa ficaria sem caminho de saida numa tela que nao tem senha.
+ */
+function normalizarEspera(bruto) {
+  const n = Number(bruto);
+  if (!Number.isFinite(n) || n <= 0) return SEGUNDOS_REENVIO_PADRAO;
+  return Math.min(Math.ceil(n), ESPERA_MAXIMA_S);
 }
 
 /**
@@ -124,7 +183,7 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
       `[Secure Share] ${caminhoFuncao(funcao)} nao chegou a uma Edge Function ` +
         `(HTTP ${resposta.status}). Falta o rewrite de /api/* na hospedagem. ` +
         'Producao: Amplify > App settings > Rewrites and redirects, antes do catch-all da SPA. ' +
-        'Desenvolvimento: defina SUPABASE_FUNCTIONS_URL no ambiente do Vite.',
+        'Desenvolvimento: defina SUPABASE_API_URL no ambiente do Vite.',
     );
     throw new ErroApi('proxy_nao_configurado', { status: resposta.status });
   }
@@ -134,9 +193,15 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
     // Sessao invalida: limpamos aqui para a proxima renderizacao cair no login,
     // em vez de a tela ficar tentando com um token morto.
     if (resposta.status === 401) limparSessao();
-    throw new ErroApi(dados?.erro ?? null, {
+    // `motivo` alem de `erro`: o corpo de freio de carbon-ss-codigo tem a MESMA
+    // forma do corpo de sucesso ({ enviado, ... }), de proposito, e por isso
+    // nomeia o codigo como `motivo`. Ler os dois campos evita que uma diferenca
+    // de nome vire "erro generico" justamente no caminho que precisa dizer
+    // quantos segundos faltam.
+    throw new ErroApi(dados?.erro ?? dados?.motivo ?? null, {
       status: resposta.status,
       detalhe: dados?.detalhe ?? null,
+      espere: dados?.espere ?? null,
     });
   }
 
@@ -164,6 +229,39 @@ function MODO_DEMO_ATIVO() {
   return MODO_DEMO && lerSessao()?.demo === true;
 }
 
+/**
+ * Trinco da demonstracao NA TELA DE LOGIN.
+ *
+ * MODO_DEMO_ATIVO() depende de `sessao.demo`, que so existe DEPOIS de entrar -
+ * por isso a tela de login era a unica que a demonstracao nao alcancava. Com a
+ * entrada em duas etapas isso deixou de ser aceitavel: o pedido de codigo e a
+ * conferencia do codigo sao metade do fluxo e precisam ser revisaveis sem rede.
+ *
+ * E `let` de modulo, e nao storage: some no F5. Isso e proposital - uma
+ * demonstracao esquecida ligada faria uma tentativa de login de verdade cair no
+ * dataset ficticio em silencio. O outro lado da mesma trava e
+ * desligarDemoAntesDoLogin(), que a tela chama ao montar.
+ *
+ * Em producao o trinco nao existe: ligarDemoNoLogin() grava MODO_DEMO, que e
+ * false, e DEMO_NO_LOGIN() comeca por MODO_DEMO, entao o Rollup dobra a condicao
+ * e elimina os ramos junto com src/lib/demo.js.
+ */
+let demoNoLogin = false;
+
+/** Liga a demonstracao para esta tentativa de login. So vale em desenvolvimento. */
+export function ligarDemoNoLogin() {
+  demoNoLogin = MODO_DEMO;
+}
+
+/** Desliga o trinco. A tela de login chama ao montar, para nao herdar estado. */
+export function desligarDemoAntesDoLogin() {
+  demoNoLogin = false;
+}
+
+function DEMO_NO_LOGIN() {
+  return MODO_DEMO && demoNoLogin;
+}
+
 /* ===== Sessao ============================================================= */
 
 /**
@@ -178,22 +276,96 @@ export async function entrarDemo() {
   return { ...dados, demo: true };
 }
 
-/** POST carbon-ss-login -> { token, projetos, nome } */
-export async function entrar(email, senha) {
-  const { dados } = await chamar('carbon-ss-login', {
-    metodo: 'POST',
-    corpo: { email, senha },
-    comToken: false,
-  });
-  return dados;
+/**
+ * Etapa 1: POST carbon-ss-codigo { email }.
+ *
+ * O SERVIDOR RESPONDE A MESMA COISA PARA ENDERECO COM E SEM CADASTRO - 200 com
+ * corpo identico, inclusive quando o envio falha. Confirmar que um e-mail tem
+ * cadastro ja diria que aquela pessoa e cliente da APSIS num projeto de carbono.
+ * Esta funcao existe para preservar isso do lado de ca.
+ *
+ * POR QUE O FREIO VOLTA COMO DADO, E NAO COMO EXCECAO. Os dois 429
+ * (`espere` e `teto_diario`) sao contados por resumo do endereco e existem para
+ * endereco com e sem cadastro, entao nao sao falha da pessoa nem oraculo: a tela
+ * precisa avancar para a etapa do codigo do mesmo jeito, porque quem pediu de
+ * novo em menos de um minuto provavelmente ja tem um codigo valido na caixa.
+ * Devolvendo dado, existe UM caminho no chamador. Se fosse excecao, avancar
+ * dependeria de alguem lembrar de repetir a transicao dentro do `catch`, e o
+ * esquecimento apareceria como comportamento diferente por endereco - que e
+ * exatamente o vazamento que este endpoint foi desenhado para nao ter.
+ *
+ * Devolve sempre:
+ *   { enviado, minutos, freio: null|'espere'|'teto_diario', espere: numero|null }
+ * Em demonstracao vem tambem `codigoDemo`, que em producao nao existe (o ramo
+ * inteiro sai do bundle).
+ *
+ * Continua lancando ErroApi em 400 `email_invalido`, falha de rede, timeout e
+ * rewrite ausente: nesses casos nao houve resposta do fluxo, e a tela fica onde
+ * esta.
+ */
+export async function pedirCodigo(email) {
+  if (DEMO_NO_LOGIN()) {
+    const ficticio = await demoPedirCodigo(email, DIGITOS_CODIGO);
+    return {
+      enviado: true,
+      minutos: ficticio.minutos,
+      freio: null,
+      espere: null,
+      codigoDemo: ficticio.codigo,
+    };
+  }
+
+  try {
+    const { dados } = await chamar('carbon-ss-codigo', {
+      metodo: 'POST',
+      corpo: { email },
+      comToken: false,
+    });
+    const minutos = Number(dados?.minutos);
+    return {
+      enviado: dados?.enviado === true,
+      minutos: Number.isFinite(minutos) && minutos > 0 ? minutos : MINUTOS_CODIGO_PADRAO,
+      freio: null,
+      espere: null,
+    };
+  } catch (e) {
+    const freio = e?.status === 429 && (e.codigo === 'espere' || e.codigo === 'teto_diario');
+    if (!freio) throw e;
+    return {
+      enviado: false,
+      minutos: MINUTOS_CODIGO_PADRAO,
+      freio: e.codigo,
+      espere: e.codigo === 'espere' ? normalizarEspera(e.espere) : null,
+    };
+  }
 }
 
-/** POST carbon-ss-senha -> { trocada: true } */
-export async function trocarSenha(senhaAtual, senhaNova) {
-  if (MODO_DEMO_ATIVO()) return demoTrocarSenha();
-  const { dados } = await chamar('carbon-ss-senha', {
+/**
+ * Etapa 2: POST carbon-ss-entrar { email, codigo } -> { token, projetos, nome }.
+ *
+ * O codigo vai no CORPO, nunca em query string: URL entra no historico do
+ * navegador, no log da hospedagem e no Referer, e a maquina do cliente costuma
+ * ser compartilhada.
+ *
+ * Erros esperados, todos traduzidos por textoDoErro():
+ *   401 codigo_invalido      errado, inexistente, expirado ou pausado - UM erro
+ *                            so, porque distinguir "muitas tentativas" ja diria
+ *                            que existe codigo vivo para aquele endereco;
+ *   403 acesso_indisponivel  o codigo conferiu e a autorizacao nao veio.
+ */
+export async function entrarComCodigo(email, codigo) {
+  if (DEMO_NO_LOGIN()) {
+    const dados = await demoEntrarComCodigo(email, codigo, DIGITOS_CODIGO);
+    // `demo: true` marcado AQUI, igual a entrarDemo(): e o que faz as demais
+    // chamadas desta camada usarem o dataset ficticio e a faixa de "isto e
+    // ficticio" aparecer na tela de arquivos. Sem ele, um F5 prenderia a aba
+    // numa sessao ficticia que a proxima chamada tentaria usar contra a rede.
+    return { ...dados, demo: true };
+  }
+  const { dados } = await chamar('carbon-ss-entrar', {
     metodo: 'POST',
-    corpo: { senha_atual: senhaAtual, senha_nova: senhaNova },
+    corpo: { email, codigo },
+    comToken: false,
   });
   return dados;
 }

@@ -60,20 +60,42 @@ const TEXTOS = {
     /* Marca e navegacao */
     'app.nome': 'Secure Share',
     'app.subtitulo': 'APSIS Carbon',
-    'nav.trocarSenha': 'Change password',
     'nav.sair': 'Sign out',
     'idioma.rotulo': 'Language',
     'idioma.trocarPara': 'Switch to {nome}',
 
-    /* Login */
-    'login.chamada': 'Sign in with the e-mail and password APSIS sent you.',
+    /* Login - etapa 1, o endereco */
+    'login.chamada':
+      'Sign in with the e-mail address APSIS registered for your project. There is no password: we send a single-use code to that address.',
     'login.email': 'E-mail',
     'login.emailPlaceholder': 'your.email@company.com',
-    'login.senha': 'Password',
-    'login.senhaPlaceholder': 'Password',
+    'login.emailObrigatorio': 'Enter your e-mail address.',
+    'login.pedirCodigo': 'Send me a code',
+    'login.enviandoCodigo': 'Sending the code...',
+
+    /* Login - etapa 2, o codigo.
+       `login.codigoEnviado` E UMA FRASE DE CONTRATO, nao um texto qualquer: ela
+       aparece IGUAL para endereco com e sem cadastro, entao nao pode afirmar que
+       um e-mail saiu (seria mentira para quem nao tem cadastro) nem usar a forma
+       condicional "se este endereco estiver cadastrado" (verdadeira, mas soa
+       evasiva e ja denuncia que ha o que esconder). A saida e enunciar a REGRA,
+       que e verdadeira sempre e nao diz nada sobre este endereco em particular.
+       Se for reescrita, precisa continuar passando nos dois testes. */
+    'login.codigoTitulo': 'Enter your code',
+    'login.codigoEnviado':
+      'Check {email}. Every address APSIS has registered for a project gets a {n}-digit code, valid for {minutos} minutes and good for a single sign-in.',
+    'login.codigoReenviado': 'A new code was requested. Check {email} again.',
+    'login.codigo': 'Verification code',
+    'login.codigoObrigatorio': 'Enter the {n} digits of the code.',
+    'login.outroEmail': 'Use another e-mail address',
+    'login.reenviar': 'Send a new code',
+    'login.reenviarEspera': 'in {n}s',
+    'login.reenviarEmBreve': 'Available again shortly.',
+    'login.reenviarBloqueado': 'Daily limit reached',
     'login.entrar': 'Sign in',
     'login.entrando': 'Signing in...',
-    'login.camposObrigatorios': 'Enter your e-mail and password.',
+    'login.naoChegou':
+      'Nothing arrived? Check the spelling of the address, look in your spam folder, and then talk to the APSIS person responsible for your project.',
     /* Modo demonstracao. Envolvido em import.meta.env.DEV para as chaves
        DOBRAREM em producao: o Rollup nao remove chave solta de um objeto que e
        usado, entao sem isto os textos do demo ficariam no bundle publicado
@@ -83,6 +105,10 @@ const TEXTOS = {
           'demo.entrar': 'Enter demo mode',
           'demo.explica':
             'Opens the screens with fictitious data, no backend and no e-mail. Development only.',
+          'demo.fluxoCodigo': 'Try the code flow',
+          'demo.fluxoCodigoExplica':
+            'Walks through the two sign-in steps with no network and no e-mail.',
+          'demo.codigoFicticio': 'Demo code: {codigo}',
           'demo.faixa':
             'Demo mode: everything you see is fictitious, nothing is saved and no file is real.',
           'demo.arquivoAviso':
@@ -90,7 +116,7 @@ const TEXTOS = {
         }
       : {}),
     'login.semAcesso':
-      'Forgot your password, or never received your access? Contact the APSIS person responsible for your project: they issue a new one.',
+      'Never received a code? Codes only go to the address APSIS registered for your project. Talk to the APSIS person responsible for it.',
     'login.headline':
       'APSIS brings to the carbon market the same technical rigour of more than three decades in valuation.',
     'login.subheadline': 'Structuring, measurement and validation of carbon projects.',
@@ -171,30 +197,22 @@ const TEXTOS = {
     'envio.falhou': 'We could not send your files.',
     'pasta.naoAbriu': 'We could not open "{nome}"',
 
-    /* Troca de senha */
-    'senha.voltar': 'Back to documents',
-    'senha.titulo': 'Change password',
-    'senha.subtitulo': 'Pick a password you do not use anywhere else.',
-    'senha.atual': 'Current password',
-    'senha.nova': 'New password',
-    'senha.confirma': 'Repeat the new password',
-    'senha.dicaMinimo': 'At least {n} characters.',
-    'senha.informeAtual': 'Enter your current password.',
-    'senha.informeNova': 'Enter the new password.',
-    'senha.curta': 'The password needs at least {n} characters.',
-    'senha.igual': 'The new password must be different from the current one.',
-    'senha.naoConfere': 'The passwords do not match.',
-    'senha.aviso':
-      'The change applies to every project you have access to, and you will need to sign in again with the new password.',
-    'senha.cancelar': 'Cancel',
-    'senha.salvar': 'Save new password',
-    'senha.trocada': 'Password changed. Sign in again with the new one.',
-
-    /* Erros vindos do servidor, por codigo */
-    'erro.credenciais_obrigatorias': 'Enter your e-mail and password.',
-    'erro.credenciais_invalidas': 'Incorrect e-mail or password.',
-    'erro.muitas_tentativas':
-      'Too many attempts in a row. Wait a few minutes before trying again.',
+    /* Erros vindos do servidor, por codigo.
+       OS QUATRO DA ENTRADA SAO SIMETRICOS: aparecem igual para endereco com e
+       sem cadastro. `erro.espere` e `erro.teto_diario` sao contados por resumo do
+       endereco, justamente para existirem tambem para quem nao e cliente; e
+       `erro.codigo_invalido` cobre codigo errado, inexistente, expirado E
+       pausado num texto so, porque separar "muitas tentativas" ja diria que
+       existe codigo vivo para aquele endereco. Nao especialize nenhum deles. */
+    'erro.email_invalido': 'That does not look like an e-mail address. Check what you typed.',
+    'erro.espere':
+      'A code was requested for this address less than a minute ago. You can ask for another one in {n} seconds.',
+    'erro.teto_diario':
+      'Too many codes were requested for this address today. Try again tomorrow, or talk to the APSIS person responsible for your project.',
+    'erro.codigo_invalido': 'This code did not work. Check the digits, or ask for a new code.',
+    'erro.acesso_indisponivel':
+      'Your access to these documents is not available right now. Talk to the APSIS person responsible for your project.',
+    'erro.recurso_desativado': 'This page has been updated. Reload it and sign in again.',
     'erro.nao_autenticado': 'Your session expired. Please sign in again.',
     'erro.sem_acesso_ao_projeto': 'You do not have access to this project.',
     'erro.sem_acesso_ao_arquivo': 'You do not have access to this file.',
@@ -212,9 +230,6 @@ const TEXTOS = {
     'erro.arquivo_obrigatorio': 'Choose at least one file.',
     'erro.arquivos_demais': 'Too many files at once. Send them in smaller batches.',
     'erro.campos_obrigatorios': 'Fill in every field.',
-    'erro.senha_curta': 'The new password needs at least 12 characters.',
-    'erro.senha_igual_a_atual': 'The new password must be different from the current one.',
-    'erro.senha_atual_incorreta': 'Your current password is incorrect.',
     'erro.pasta_somente_leitura':
       'This folder is read only. Files here are published by APSIS.',
     'geral.rotulo': 'Shared with everyone',
@@ -230,19 +245,33 @@ const TEXTOS = {
   pt: {
     'app.nome': 'Secure Share',
     'app.subtitulo': 'APSIS Carbon',
-    'nav.trocarSenha': 'Trocar senha',
     'nav.sair': 'Sair',
     'idioma.rotulo': 'Idioma',
     'idioma.trocarPara': 'Mudar para {nome}',
 
-    'login.chamada': 'Entre com o e-mail e a senha que você recebeu da APSIS.',
+    'login.chamada':
+      'Entre com o e-mail que a APSIS cadastrou no seu projeto. Não há senha: enviamos um código de uso único para esse endereço.',
     'login.email': 'E-mail',
     'login.emailPlaceholder': 'seu.email@empresa.com',
-    'login.senha': 'Senha',
-    'login.senhaPlaceholder': 'Senha',
+    'login.emailObrigatorio': 'Informe o seu e-mail.',
+    'login.pedirCodigo': 'Enviar um código',
+    'login.enviandoCodigo': 'Enviando o código...',
+
+    'login.codigoTitulo': 'Digite o seu código',
+    'login.codigoEnviado':
+      'Confira {email}. Todo endereço cadastrado pela APSIS em um projeto recebe um código de {n} dígitos, válido por {minutos} minutos e para uma única entrada.',
+    'login.codigoReenviado': 'Um novo código foi pedido. Confira {email} de novo.',
+    'login.codigo': 'Código de verificação',
+    'login.codigoObrigatorio': 'Digite os {n} dígitos do código.',
+    'login.outroEmail': 'Usar outro e-mail',
+    'login.reenviar': 'Pedir um novo código',
+    'login.reenviarEspera': 'em {n}s',
+    'login.reenviarEmBreve': 'Disponível novamente em instantes.',
+    'login.reenviarBloqueado': 'Limite diário atingido',
     'login.entrar': 'Entrar',
     'login.entrando': 'Entrando...',
-    'login.camposObrigatorios': 'Informe o e-mail e a senha.',
+    'login.naoChegou':
+      'Não chegou nada? Confira se o endereço está escrito certo, procure na caixa de spam e depois fale com a pessoa da APSIS responsável pelo seu projeto.',
     /* Modo demonstracao. Envolvido em import.meta.env.DEV para as chaves
        DOBRAREM em producao: o Rollup nao remove chave solta de um objeto que e
        usado, entao sem isto os textos do demo ficariam no bundle publicado
@@ -252,6 +281,10 @@ const TEXTOS = {
           'demo.entrar': 'Entrar em modo demonstração',
           'demo.explica':
             'Abre as telas com dados fictícios, sem backend e sem e-mail. Só em desenvolvimento.',
+          'demo.fluxoCodigo': 'Testar o fluxo de código',
+          'demo.fluxoCodigoExplica':
+            'Percorre as duas etapas da entrada, sem rede e sem e-mail.',
+          'demo.codigoFicticio': 'Código de demonstração: {codigo}',
           'demo.faixa':
             'Modo demonstração: tudo o que você vê é fictício, nada é salvo e nenhum arquivo é real.',
           'demo.arquivoAviso':
@@ -259,7 +292,7 @@ const TEXTOS = {
         }
       : {}),
     'login.semAcesso':
-      'Esqueceu a senha ou não recebeu o acesso? Fale com a pessoa da APSIS responsável pelo seu projeto: é ela que emite uma nova.',
+      'Nunca recebeu um código? O código só vai para o endereço que a APSIS cadastrou no seu projeto. Fale com a pessoa da APSIS responsável por ele.',
     'login.headline':
       'A APSIS leva para o mercado de carbono o mesmo rigor técnico de mais de três décadas em avaliações.',
     'login.subheadline': 'Estruturação, mensuração e validação de projetos de carbono.',
@@ -336,28 +369,15 @@ const TEXTOS = {
     'envio.falhou': 'Não foi possível enviar.',
     'pasta.naoAbriu': 'Não foi possível abrir "{nome}"',
 
-    'senha.voltar': 'Voltar aos documentos',
-    'senha.titulo': 'Trocar senha',
-    'senha.subtitulo': 'Escolha uma senha que você não use em outro serviço.',
-    'senha.atual': 'Senha atual',
-    'senha.nova': 'Nova senha',
-    'senha.confirma': 'Repita a nova senha',
-    'senha.dicaMinimo': 'Pelo menos {n} caracteres.',
-    'senha.informeAtual': 'Informe a senha atual.',
-    'senha.informeNova': 'Informe a nova senha.',
-    'senha.curta': 'A senha precisa de pelo menos {n} caracteres.',
-    'senha.igual': 'A nova senha precisa ser diferente da atual.',
-    'senha.naoConfere': 'As senhas não conferem.',
-    'senha.aviso':
-      'A troca vale para todos os projetos aos quais você tem acesso, e você precisará entrar de novo com a senha nova.',
-    'senha.cancelar': 'Cancelar',
-    'senha.salvar': 'Salvar nova senha',
-    'senha.trocada': 'Senha alterada. Entre novamente com a nova senha.',
-
-    'erro.credenciais_obrigatorias': 'Informe o e-mail e a senha.',
-    'erro.credenciais_invalidas': 'E-mail ou senha incorretos.',
-    'erro.muitas_tentativas':
-      'Muitas tentativas seguidas. Aguarde alguns minutos antes de tentar de novo.',
+    'erro.email_invalido': 'Isso não parece um endereço de e-mail. Confira o que você digitou.',
+    'erro.espere':
+      'Um código foi pedido para este endereço há menos de um minuto. Você pode pedir outro em {n} segundos.',
+    'erro.teto_diario':
+      'Muitos códigos foram pedidos para este endereço hoje. Tente de novo amanhã ou fale com a pessoa da APSIS responsável pelo seu projeto.',
+    'erro.codigo_invalido': 'Este código não funcionou. Confira os dígitos ou peça um novo código.',
+    'erro.acesso_indisponivel':
+      'O seu acesso a estes documentos não está disponível agora. Fale com a pessoa da APSIS responsável pelo seu projeto.',
+    'erro.recurso_desativado': 'Esta página foi atualizada. Recarregue e entre novamente.',
     'erro.nao_autenticado': 'Sua sessão expirou. Entre novamente.',
     'erro.sem_acesso_ao_projeto': 'Você não tem acesso a este projeto.',
     'erro.sem_acesso_ao_arquivo': 'Você não tem acesso a este arquivo.',
@@ -375,9 +395,6 @@ const TEXTOS = {
     'erro.arquivo_obrigatorio': 'Selecione ao menos um arquivo.',
     'erro.arquivos_demais': 'Muitos arquivos de uma vez. Envie em lotes menores.',
     'erro.campos_obrigatorios': 'Preencha todos os campos.',
-    'erro.senha_curta': 'A nova senha precisa de pelo menos 12 caracteres.',
-    'erro.senha_igual_a_atual': 'A nova senha precisa ser diferente da atual.',
-    'erro.senha_atual_incorreta': 'A senha atual está incorreta.',
     'erro.pasta_somente_leitura':
       'Esta pasta é somente leitura. Os arquivos aqui são publicados pela APSIS.',
     'geral.rotulo': 'Compartilhado com todos',
@@ -483,6 +500,11 @@ export function useIdioma() {
   return contexto;
 }
 
+/** Sobrou um {marcador} sem valor no texto ja interpolado? */
+function temMarcadorCru(texto) {
+  return /\{\w+\}/.test(texto);
+}
+
 /**
  * Texto de um erro vindo da API, pelo CODIGO.
  *
@@ -490,14 +512,32 @@ export function useIdioma() {
  * codigo, e a traducao acontece aqui, na tela. Sem isso, trocar o idioma nao
  * mudaria a mensagem de erro ja formada, e a api.js precisaria de um hook do
  * React, que ela nao pode ter.
+ *
+ * `valores` existe porque ha texto de erro com numero dentro: `erro.espere` diz
+ * em quantos segundos da para pedir outro codigo. Sem o parametro, a unica saida
+ * seria escrever o texto sem o numero - e um cliente cego, que nao ve o contador
+ * regressivo (ele fica fora da regiao aria-live de proposito), ficaria sem
+ * nenhuma nocao de quanto esperar.
+ *
+ * A REDE DE SEGURANCA: se depois da interpolacao ainda sobrar um {marcador}, o
+ * texto NAO vai para a tela. Quem le e um cliente externo, e "Aguarde {n}
+ * segundos" e pior do que a mensagem generica - alem de ser exatamente o modo de
+ * falhar de quem acrescenta um marcador novo e esquece de passar o valor.
  */
-export function textoDoErro(t, erro) {
+export function textoDoErro(t, erro, valores) {
   const codigo = erro?.codigo;
   if (codigo) {
-    const traduzido = t(`erro.${codigo}`);
+    const traduzido = t(`erro.${codigo}`, valores);
     // t() devolve a propria chave quando nao encontra. Nesse caso caimos no
     // texto generico em vez de mostrar "erro.algum_codigo_novo" ao cliente.
-    if (traduzido !== `erro.${codigo}`) return traduzido;
+    if (traduzido !== `erro.${codigo}` && !temMarcadorCru(traduzido)) return traduzido;
+    if (temMarcadorCru(traduzido)) {
+      // So o codigo no console: o texto pode ter recebido o e-mail da pessoa em
+      // outro marcador, e nao ha por que o console guardar isso.
+      console.error(
+        `[i18n] erro.${codigo} tem marcador sem valor. Mostrando a mensagem generica.`,
+      );
+    }
   }
   if (erro?.status === 401) return t('erro.nao_autenticado');
   if (erro?.status === 403) return t('erro.sem_permissao');

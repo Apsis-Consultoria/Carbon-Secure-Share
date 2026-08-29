@@ -50,12 +50,21 @@ export async function lerConfigSharePoint(): Promise<ConfigSharePoint> {
     .maybeSingle();
 
   const valor = (data?.valor ?? {}) as Record<string, unknown>;
-  const texto = (chave: keyof ConfigSharePoint) => {
+  // Restrito as chaves OBRIGATORIAS. `driveId` e opcional e nao tem default em
+  // PADRAO - ele e descoberto, nao configurado - entao inclui-lo aqui faria o
+  // retorno virar `string | undefined` e contaminar os quatro campos que sao
+  // sempre string.
+  type ChaveTexto = 'siteHost' | 'sitePath' | 'biblioteca' | 'pastaGeral';
+  const texto = (chave: ChaveTexto): string => {
     const v = valor[chave];
     return typeof v === 'string' && v.trim() ? v.trim() : PADRAO[chave];
   };
 
   cache = {
+    // Descoberto, nao configurado: ver obterDriveId em graph.ts.
+    driveId: typeof valor.driveId === 'string' && valor.driveId.trim()
+      ? valor.driveId.trim()
+      : undefined,
     siteHost: texto('siteHost'),
     sitePath: texto('sitePath'),
     biblioteca: texto('biblioteca'),
@@ -79,4 +88,33 @@ export function caminhoNaBiblioteca(
   ...partes: (string | null | undefined)[]
 ): string {
   return [cfg.pastaBase, ...partes].filter((p) => p && String(p).trim()).join('/');
+}
+
+/**
+ * Grava (ou apaga) o driveId descoberto na linha `secure_share`.
+ *
+ * MERGE em jsonb, e nao substituicao do objeto: a linha guarda tambem siteHost,
+ * biblioteca, remetente e portalUrl, e sobrescrever o valor inteiro apagaria
+ * tudo isso. O `||` do Postgres mescla no nivel de cima, que e o que queremos.
+ *
+ * NAO LANCA. Isto e otimizacao, nao correcao: se a gravacao falhar, o proximo
+ * isolate frio simplesmente redescobre pelo Graph, como fazia antes. Derrubar a
+ * requisicao do cliente por causa de um cache seria trocar lentidao por erro.
+ *
+ * Atualiza o cache de memoria junto, para a mesma requisicao ja enxergar.
+ */
+export async function gravarDriveId(driveId: string | null): Promise<void> {
+  try {
+    const admin = obterAdmin();
+    const { error } = await admin.rpc('carbon_secure_share_gravar_drive_id', {
+      p_drive_id: driveId,
+    });
+    if (error) {
+      console.warn('Nao foi possivel guardar o driveId:', error.message);
+      return;
+    }
+    if (cache) cache = { ...cache, driveId: driveId ?? undefined };
+  } catch (e) {
+    console.warn('Nao foi possivel guardar o driveId:', e instanceof Error ? e.message : e);
+  }
 }

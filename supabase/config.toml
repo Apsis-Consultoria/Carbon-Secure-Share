@@ -35,12 +35,25 @@ project_id = "secure-share-carbon"
 # Corpo com "code" e "message" e sem access-control-allow-origin = barrado pelo
 # gateway, republicar com --no-verify-jwt.
 
-# Emite o token de sessao a partir de e-mail e senha. Publica por definicao: e a
-# porta de entrada, chamada por quem ainda nao tem sessao.
+# Pede o codigo de uso unico por e-mail. Publica por definicao: e o primeiro
+# passo da entrada, chamado por quem ainda nao tem sessao nenhuma. Responde
+# sempre o mesmo 200, exista ou nao cadastro para o endereco.
+[functions.carbon-ss-codigo]
+verify_jwt = false
+
+# Troca o codigo pelo token de sessao. Publica pelo mesmo motivo: quem chama
+# ainda nao tem sessao - e justamente ela que esta sendo emitida aqui.
+[functions.carbon-ss-entrar]
+verify_jwt = false
+
+# LEGADO, em transicao: emite o token de sessao a partir de e-mail e senha.
+# Continua publica enquanto houver navegador com a tela antiga aberta. Vira casca
+# de 410 no corte, e nao pasta apagada: apagar a pasta NAO despublica a funcao.
 [functions.carbon-ss-login]
 verify_jwt = false
 
-# Troca de senha. Exige sessao valida, conferida por verificarSessao.
+# LEGADO: troca de senha. Exige sessao valida, conferida por verificarSessao.
+# Sai no corte, com `supabase functions delete carbon-ss-senha` explicito.
 [functions.carbon-ss-senha]
 verify_jwt = false
 

@@ -1,7 +1,24 @@
 // -----------------------------------------------------------------------------
-// carbon-ss-login - autentica o cliente externo e emite o token de sessao.
+// carbon-ss-login - entrada por SENHA. Caminho legado, em transicao.
 // -----------------------------------------------------------------------------
 // POST { email, senha } -> { token, projetos: [{ projeto_id, empresa, ap_os, pasta }], nome }
+//
+// ESTA FUNCAO ESTA SENDO APOSENTADA. A entrada nova nao tem senha: o cliente pede
+// um codigo em carbon-ss-codigo e o troca por sessao em carbon-ss-entrar.
+//
+// POR QUE ELA CONTINUA VIVA NESTE RELEASE, e nao foi apagada junto:
+//
+//   1. O frontend e o backend nao viram a chave no mesmo instante. O GitHub
+//      Actions publica as Edge Functions em cerca de dois minutos e o Amplify
+//      reconstroi o frontend em alguns a mais. Nesse intervalo, o navegador de
+//      quem ja estava com a tela de login aberta ainda posta { email, senha }
+//      para uma funcao ja publicada. Sem este arquivo, essas pessoas veriam
+//      "algo deu errado" sem entender por que;
+//   2. quando o corte vier (passo separado), ela vira CASCA de 410
+//      recurso_desativado - e nao um diretorio apagado. Apagar a pasta nao
+//      despublica a funcao, e um `functions deploy` distraido a partir de um
+//      checkout antigo republicaria a versao de hoje e a senha voltaria a valer
+//      em silencio, sem ninguem perceber.
 //
 // A verificacao de credencial NAO acontece aqui: ela roda em
 // public.carbon_secure_share_autenticar, que compara o bcrypt e checa, na mesma
@@ -15,13 +32,25 @@
 
 import { tratarOptions, respostaErro, respostaJson } from '../_shared/cors.ts';
 import { obterAdmin } from '../_shared/supabase.ts';
-import { assinarSessao, ID_GERAL, type ProjetoSessao } from '../_shared/sessao.ts';
-import { lerConfigSharePoint } from '../_shared/config.ts';
+import { assinarSessao } from '../_shared/sessao.ts';
+import { montarProjetos } from '../_shared/sessaoProjetos.ts';
 
 const METODOS = 'POST, OPTIONS';
 
-// Anti forca bruta. 8 falhas em 15 minutos por e-mail: folgado para quem erra a
-// senha de verdade, apertado para script.
+/**
+ * Anti forca bruta do caminho de SENHA. 8 falhas em 15 minutos por e-mail.
+ *
+ * FICA, e a permanencia e decisao. A migration da entrada por codigo tira
+ * carbon_secure_share_tentativas do caminho de decisao do login NOVO - contar
+ * falhas por e-mail num endpoint publico oferece a qualquer um a chance de
+ * trancar um cliente, e quem freia palpite agora e o contador da propria linha do
+ * codigo. Mas aqui, no caminho legado, do outro lado esta um bcrypt: removendo o
+ * contador, esta funcao passaria os proximos dias como um oraculo de senha sem
+ * freio nenhum. Trocar um risco de lockout que ja existe hoje por forca bruta
+ * livre, num caminho que vai ser cortado, seria piorar para arrumar.
+ *
+ * NAO reintroduza esta contagem em carbon-ss-codigo nem em carbon-ss-entrar.
+ */
 const MAX_FALHAS = 8;
 const JANELA_MIN = 15;
 
@@ -36,7 +65,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const email = String(corpo?.email ?? '').toLowerCase().trim();
     const senha = String(corpo?.senha ?? '');
 
-    if (!email || !senha) return respostaErro('credenciais_obrigatorias', 400, METODOS);
+    if (!email) return respostaErro('credenciais_obrigatorias', 400, METODOS);
+
+    if (!senha) {
+      /*
+       * Corpo SEM senha: quem chamou e um frontend novo batendo no endpoint
+       * velho, ou uma aba antiga com o campo em branco. Nao ha o que autenticar,
+       * e emitir sessao daqui sem credencial nenhuma seria transformar esta
+       * funcao numa porta aberta.
+       *
+       * 400 e nao 401: nao houve tentativa de credencial a recusar, houve corpo
+       * incompleto. O codigo `recarregar_pagina` e novo, entao o frontend antigo
+       * cai na mensagem generica dele - aceitavel, porque este caminho so e
+       * alcancado por uma combinacao que nao deveria existir e que se resolve
+       * exatamente com um F5.
+       */
+      return respostaErro('recarregar_pagina', 400, METODOS);
+    }
 
     const admin = obterAdmin();
 
@@ -79,45 +124,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .eq('email', email)
       .eq('sucesso', false);
 
-    const projetos: ProjetoSessao[] = (data.projetos ?? []).map(
-      (p: Record<string, unknown>) => ({
-        projeto_id: String(p.projeto_id),
-        empresa: String(p.empresa ?? ''),
-        ap_os: (p.ap_os as string) ?? null,
-        // O nome da pasta vem do BANCO (carbon_secure_share_nome_pasta), nunca
-        // recalculado aqui: duas implementacoes divergentes fariam o cliente
-        // procurar uma pasta que nao existe.
-        pasta: String(p.pasta ?? ''),
-      }),
-    );
-
-    const nome = String(data.projetos?.[0]?.nome ?? '');
-
-    /*
-     * A pasta GERAL entra na sessao como se fosse mais um projeto, marcada como
-     * somente leitura.
-     *
-     * POR QUE ASSIM, e nao com um parametro `escopo` nas rotas: listar,
-     * visualizar, baixar e montar o ZIP passam a funcionar sem NENHUMA
-     * ramificacao - eles ja resolvem "o projeto do token". O unico lugar que
-     * precisa saber que a Geral e diferente e o envio, que a recusa. Um caminho
-     * a menos e um caminho a menos para esquecer de proteger.
-     *
-     * Ela so entra se o cliente tiver ao menos um projeto de verdade: quem nao
-     * tem acesso a projeto nenhum tambem nao deve ver a Geral.
-     */
-    if (projetos.length) {
-      const cfg = await lerConfigSharePoint();
-      if (cfg.pastaGeral) {
-        projetos.unshift({
-          projeto_id: ID_GERAL,
-          empresa: cfg.pastaGeral,
-          ap_os: null,
-          pasta: cfg.pastaGeral,
-          somenteLeitura: true,
-        });
-      }
-    }
+    // A montagem da lista de projetos (e a injecao da pasta Geral) MUDOU DE
+    // ARQUIVO: ela mora em _shared/sessaoProjetos.ts desde que passou a existir
+    // um segundo emissor de sessao. Duas copias divergiriam, e a divergencia
+    // apareceria como a Geral existindo num caminho de login e sumindo no outro.
+    const { projetos, nome } = await montarProjetos(data.projetos);
 
     const token = await assinarSessao({ email, nome, projetos });
 

@@ -16,8 +16,14 @@ jobs:
       # Nao cancela os outros se um falhar: cada function e independente, e
       # abortar tudo por causa de uma deixaria o conjunto meio publicado.
       fail-fast: false
+      # ATENCAO: esta lista e escrita a mao e NAO e derivada da pasta
+      # supabase/functions. Funcao nova sem linha aqui simplesmente nunca e
+      # publicada, e o sintoma e um 404 do gateway - que nao traz {erro:...} e
+      # aparece na tela do cliente como falha generica, sem pista da causa.
       matrix:
         function:
+          - carbon-ss-codigo
+          - carbon-ss-entrar
           - carbon-ss-login
           - carbon-ss-listar
           - carbon-ss-arvore

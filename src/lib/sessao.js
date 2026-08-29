@@ -10,6 +10,14 @@
  * que e o comportamento certo quando o proximo a sentar naquela maquina pode ser
  * outra pessoa.
  *
+ * ISTO NAO MUDOU COM A ENTRADA POR CODIGO, e nao mudou DE PROPOSITO. A sessao
+ * continua durando 8 horas e continua morrendo ao fechar a aba; "lembrar este
+ * dispositivo" ficou FORA desta entrega por decisao do dono, entao nao existe
+ * cookie de dispositivo, nao existe tabela para isso e nao ha nada meio-pronto
+ * esperando ser ligado. Quem for tentado a "corrigir" isto para localStorage
+ * achando que e o que o dono pediu, leia de novo o paragrafo acima: o motivo e a
+ * maquina compartilhada, e ele nao tem nada a ver com senha.
+ *
  * O token e assinado no servidor (HMAC) e carrega os projetos autorizados.
  * Alterar qualquer coisa dele aqui so faz a proxima chamada devolver 401.
  */

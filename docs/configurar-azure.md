@@ -53,14 +53,14 @@ uma razão escrita.
 ## São DOIS registros, um por sistema
 
 O Portal Apsis Carbon e o Secure Share Carbon rodam no **mesmo projeto Supabase**,
-e secret de Edge Function é por **projeto**. Se os dois lessem `AZURE_CLIENT_ID`,
+e secret de Edge Function é por **projeto**. Se os dois lessem `AZURE_PORTAL_CLIENT_ID`,
 só um registro caberia, e um dos sistemas usaria a credencial do outro em
 silêncio. Por isso os nomes têm prefixo:
 
 | Sistema | Secrets |
 |---|---|
 | Portal Apsis Carbon | `AZURE_PORTAL_TENANT_ID`, `AZURE_PORTAL_CLIENT_ID`, `AZURE_PORTAL_CLIENT_SECRET` |
-| Secure Share Carbon | `AZURE_SECURE_SHARE_TENANT_ID`, `AZURE_SECURE_SHARE_CLIENT_ID`, `AZURE_SECURE_SHARE_CLIENT_SECRET` |
+| Secure Share Carbon | `AZURE_PORTAL_TENANT_ID`, `AZURE_PORTAL_CLIENT_ID`, `AZURE_PORTAL_CLIENT_SECRET` |
 
 Dois registros não são só burocracia: o portal do cliente é a superfície exposta
 na internet, e credencial separada permite **rotacionar e revogar um sem derrubar
@@ -83,8 +83,8 @@ crie um registro novo:
 
 Anote da tela **Overview**:
 
-- **Application (client) ID** → vira `AZURE_SECURE_SHARE_CLIENT_ID`
-- **Directory (tenant) ID** → vira `AZURE_SECURE_SHARE_TENANT_ID`
+- **Application (client) ID** → vira `AZURE_PORTAL_CLIENT_ID`
+- **Directory (tenant) ID** → vira `AZURE_PORTAL_TENANT_ID`
 
 Os dois são identificadores, não segredos.
 
@@ -100,7 +100,7 @@ Copie o campo **Value** na hora: ele só aparece uma vez. O campo **Secret ID**
 **não** serve para nada aqui, e confundir os dois é o erro mais comum (o
 diagnóstico avisa quando o valor é curto demais).
 
-Esse valor vira `AZURE_SECURE_SHARE_CLIENT_SECRET`.
+Esse valor vira `AZURE_PORTAL_CLIENT_SECRET`.
 
 > **Anote a data de expiração num lembrete.** Quando ele vencer, o sistema para de
 > falar com o SharePoint e o erro que aparece na tela é genérico. O diagnóstico do
@@ -225,18 +225,18 @@ O segredo nunca é impresso.
 PowerShell:
 
 ```powershell
-$env:AZURE_SECURE_SHARE_TENANT_ID = Read-Host "Tenant ID"
-$env:AZURE_SECURE_SHARE_CLIENT_ID = Read-Host "Client ID"
-$env:AZURE_SECURE_SHARE_CLIENT_SECRET = Read-Host "Client Secret"
+$env:AZURE_PORTAL_TENANT_ID = Read-Host "Tenant ID"
+$env:AZURE_PORTAL_CLIENT_ID = Read-Host "Client ID"
+$env:AZURE_PORTAL_CLIENT_SECRET = Read-Host "Client Secret"
 node scripts/diagnostico-azure.mjs --escrita
 ```
 
 Git Bash:
 
 ```bash
-read -s -p "Client Secret: " AZURE_SECURE_SHARE_CLIENT_SECRET
-export AZURE_SECURE_SHARE_CLIENT_SECRET
-export AZURE_SECURE_SHARE_TENANT_ID=...; export AZURE_SECURE_SHARE_CLIENT_ID=...
+read -s -p "Client Secret: " AZURE_PORTAL_CLIENT_SECRET
+export AZURE_PORTAL_CLIENT_SECRET
+export AZURE_PORTAL_TENANT_ID=...; export AZURE_PORTAL_CLIENT_ID=...
 node scripts/diagnostico-azure.mjs --escrita
 ```
 
@@ -250,7 +250,7 @@ arquivo do repositório.
 Pelo painel: **Edge Functions > Secrets**. Ou pela CLI:
 
 ```bash
-npx supabase secrets set AZURE_SECURE_SHARE_TENANT_ID="..." AZURE_SECURE_SHARE_CLIENT_ID="..." AZURE_SECURE_SHARE_CLIENT_SECRET="..." --project-ref bknkjcqrnzjjnvtviati
+npx supabase secrets set AZURE_PORTAL_TENANT_ID="..." AZURE_PORTAL_CLIENT_ID="..." AZURE_PORTAL_CLIENT_SECRET="..." --project-ref bknkjcqrnzjjnvtviati
 ```
 
 As aspas importam: o segredo do Azure costuma trazer `/`, `+` e `=`, e sem elas o
@@ -297,7 +297,7 @@ O passo 10, em desenvolvimento, é a variável do processo do Vite (não do
 navegador, e sem prefixo `VITE_`, então ela não entra no bundle):
 
 ```powershell
-$env:SUPABASE_FUNCTIONS_URL="https://<ref>.supabase.co/functions/v1"; npm run dev
+$env:SUPABASE_API_URL="https://<ref>.supabase.co"; npm run dev
 ```
 
 Em produção é a regra de rewrite no console do Amplify. Ver o README.

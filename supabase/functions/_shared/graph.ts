@@ -9,14 +9,14 @@
 // dizer sim para tudo que o aplicativo pode ler, e quem decide o que ESTE
 // cliente pode ver e o par sessao + carbon_secure_share_permissoes.
 //
-// SECRETS, com prefixo AZURE_SECURE_SHARE_:
-//   AZURE_SECURE_SHARE_TENANT_ID
-//   AZURE_SECURE_SHARE_CLIENT_ID
-//   AZURE_SECURE_SHARE_CLIENT_SECRET
+// SECRETS, com prefixo AZURE_:
+//   AZURE_PORTAL_TENANT_ID
+//   AZURE_PORTAL_CLIENT_ID
+//   AZURE_PORTAL_CLIENT_SECRET
 //
-// POR QUE O PREFIXO, e nao os nomes curtos AZURE_*: este sistema e o Portal
+// POR QUE O PREFIXO, e nao os nomes curtos AZURE_PORTAL_*: este sistema e o Portal
 // Apsis Carbon rodam no MESMO projeto Supabase, e secret de Edge Function e por
-// PROJETO. Com os dois lendo `AZURE_CLIENT_ID`, so um registro de aplicativo
+// PROJETO. Com os dois lendo `AZURE_PORTAL_CLIENT_ID`, so um registro de aplicativo
 // caberia no projeto e o outro ficaria morto - o sintoma seria um dos dois
 // sistemas usando silenciosamente a credencial do outro.
 //
@@ -58,9 +58,9 @@ function exigirEnv(nome: string): string {
 /** true quando os tres secrets do Azure existem. Usado para responder 503 cedo. */
 export function temConfigAzure(): boolean {
   return Boolean(
-    Deno.env.get('AZURE_SECURE_SHARE_TENANT_ID') &&
-      Deno.env.get('AZURE_SECURE_SHARE_CLIENT_ID') &&
-      Deno.env.get('AZURE_SECURE_SHARE_CLIENT_SECRET'),
+    Deno.env.get('AZURE_PORTAL_TENANT_ID') &&
+      Deno.env.get('AZURE_PORTAL_CLIENT_ID') &&
+      Deno.env.get('AZURE_PORTAL_CLIENT_SECRET'),
   );
 }
 
@@ -68,10 +68,10 @@ export async function obterToken(): Promise<string> {
   const agora = Date.now();
   if (tokenCache && tokenCache.expiraEm - FOLGA_MS > agora) return tokenCache.valor;
 
-  const tenant = exigirEnv('AZURE_SECURE_SHARE_TENANT_ID');
+  const tenant = exigirEnv('AZURE_PORTAL_TENANT_ID');
   const corpo = new URLSearchParams({
-    client_id: exigirEnv('AZURE_SECURE_SHARE_CLIENT_ID'),
-    client_secret: exigirEnv('AZURE_SECURE_SHARE_CLIENT_SECRET'),
+    client_id: exigirEnv('AZURE_PORTAL_CLIENT_ID'),
+    client_secret: exigirEnv('AZURE_PORTAL_CLIENT_SECRET'),
     // .default pede as permissoes de APLICATIVO ja consentidas. Listar escopo a
     // escopo nao funciona em client credentials: o Azure recusa com invalid_scope.
     scope: 'https://graph.microsoft.com/.default',
@@ -131,6 +131,13 @@ export type ConfigSharePoint = {
   sitePath: string;
   biblioteca: string;
   /**
+   * Id da biblioteca no Graph, quando ja resolvido antes.
+   *
+   * NAO e configuracao que alguem preenche: e um valor DESCOBERTO, guardado
+   * para nao ser redescoberto. Ver obterDriveId para o porque.
+   */
+  driveId?: string;
+  /**
    * Pasta dentro da biblioteca onde TUDO do Carbon vive ('' = raiz).
    *
    * Existe porque o Carbon divide a biblioteca "Secure Share" com o Portal
@@ -149,6 +156,11 @@ export type ConfigSharePoint = {
 };
 
 const cacheDrive = new Map<string, string>();
+
+// Import de FUNCAO (nao so de tipo) de config.ts. Nao cria ciclo em tempo de
+// execucao porque config.ts importa apenas `type ConfigSharePoint` daqui, e
+// import de tipo desaparece na compilacao.
+import { gravarDriveId } from './config.ts';
 
 
 /**
@@ -182,10 +194,40 @@ function exigirDentroDaBase(cfg: ConfigSharePoint, caminho: string): void {
   );
 }
 
+/**
+ * Id da biblioteca no Graph, com TRES niveis de cache.
+ *
+ * O CUSTO QUE ISSO EVITA: resolver do zero sao DUAS idas ao Graph em serie -
+ * `/sites/{host}:{path}` e depois `/sites/{id}/drives`, que lista todas as
+ * bibliotecas do site so para achar uma pelo nome. Perto de 700 ms, e antes de
+ * a requisicao comecar o trabalho que o cliente pediu.
+ *
+ * E isso acontecia em TODO isolate frio, de CADA uma das seis funcoes. O cache
+ * de memoria (cacheDrive) so ajudava a partir da segunda chamada no mesmo
+ * isolate, e o Supabase derruba isolate ocioso rapido - entao, na pratica, o
+ * cliente pagava os 700 ms quase toda vez que voltava ao portal.
+ *
+ * Os tres niveis, do mais barato ao mais caro:
+ *
+ *   1. memoria     cacheDrive, valido enquanto o isolate viver;
+ *   2. banco       cfg.driveId, que ja veio junto da configuracao, sem UMA
+ *                  consulta a mais: lerConfigSharePoint sempre roda antes;
+ *   3. Graph       so quando ninguem sabe, e o resultado e GRAVADO no banco.
+ *
+ * O id de uma biblioteca do SharePoint nao muda; ele so deixa de valer se a
+ * biblioteca for apagada e recriada. Para esse caso existe esquecerDriveId, que
+ * a funcao de chamada invoca ao receber 404 do Graph.
+ */
 export async function obterDriveId(cfg: ConfigSharePoint): Promise<string> {
   const chave = `${cfg.siteHost}${cfg.sitePath}::${cfg.biblioteca}`;
-  const emCache = cacheDrive.get(chave);
-  if (emCache) return emCache;
+
+  const emMemoria = cacheDrive.get(chave);
+  if (emMemoria) return emMemoria;
+
+  if (cfg.driveId) {
+    cacheDrive.set(chave, cfg.driveId);
+    return cfg.driveId;
+  }
 
   const respSite = await chamar(`/sites/${cfg.siteHost}:${cfg.sitePath}`, {
     headers: { Accept: 'application/json' },
@@ -211,7 +253,34 @@ export async function obterDriveId(cfg: ConfigSharePoint): Promise<string> {
   }
 
   cacheDrive.set(chave, drive.id);
+  // Grava para os proximos isolates. Falha aqui NAO derruba a requisicao: o id
+  // ja esta em memoria e o pior caso e redescobrir na proxima partida fria.
+  void gravarDriveId(drive.id);
   return drive.id;
+}
+
+/**
+ * Descarta o driveId guardado, na memoria e no banco.
+ *
+ * Chamado quando o Graph responde 404 para a propria biblioteca, o que so
+ * acontece se ela tiver sido apagada e recriada - o id novo e diferente. Sem
+ * isto, o valor gravado no banco manteria o sistema quebrado ate alguem editar
+ * a linha a mao, e o sintoma seria "o portal parou de achar os arquivos" sem
+ * nada no codigo ter mudado.
+ */
+/** A biblioteca ainda existe com este id? Uma chamada, so usada no caminho 404. */
+async function driveAindaExiste(driveId: string): Promise<boolean> {
+  const r = await chamar(`/drives/${driveId}?$select=id`, {
+    headers: { Accept: 'application/json' },
+  });
+  // Qualquer coisa que nao seja 404 conta como "existe": um 500 transitorio do
+  // Graph nao pode fazer o sistema jogar fora um id que esta correto.
+  return r.status !== 404;
+}
+
+export async function esquecerDriveId(cfg: ConfigSharePoint): Promise<void> {
+  cacheDrive.delete(`${cfg.siteHost}${cfg.sitePath}::${cfg.biblioteca}`);
+  await gravarDriveId(null);
 }
 
 // -----------------------------------------------------------------------------
@@ -251,7 +320,26 @@ export async function listarPasta(
     { headers: { Accept: 'application/json' } },
   );
 
-  if (resposta.status === 404) return [];
+  if (resposta.status === 404) {
+    // 404 aqui tem DUAS causas, e elas pedem respostas opostas:
+    //
+    //   a pasta nao existe   -> lista vazia e a resposta certa (projeto novo
+    //                           cuja pasta ainda nao foi criada, subpasta que o
+    //                           cliente digitou na URL);
+    //   o driveId envelheceu -> lista vazia seria MENTIRA. O cliente veria
+    //                           "nenhum arquivo" num projeto cheio deles, e
+    //                           ninguem procuraria defeito, porque a tela nao
+    //                           errou visivelmente.
+    //
+    // O segundo caso so passou a existir quando o driveId virou valor guardado
+    // no banco. Uma consulta barata separa os dois, e ela so acontece no 404.
+    if (!(await driveAindaExiste(driveId))) {
+      console.error('O driveId guardado nao vale mais; descartando para redescobrir.');
+      await esquecerDriveId(cfg);
+      throw new ErroGraph('sharepoint_falhou', 'Nao foi possivel listar os arquivos.');
+    }
+    return [];
+  }
   if (!resposta.ok) {
     console.error('Falha ao listar pasta:', resposta.status);
     throw new ErroGraph('sharepoint_falhou', 'Nao foi possivel listar os arquivos.');

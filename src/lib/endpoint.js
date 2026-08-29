@@ -19,7 +19,7 @@
  *       tipo    200 (rewrite / proxy)
  *
  *   desenvolvimento         server.proxy do vite.config.js, alimentado pela
- *                           variavel de ambiente SUPABASE_FUNCTIONS_URL. Ela e
+ *                           variavel de ambiente SUPABASE_API_URL. Ela e
  *                           lida pelo processo do Vite, NAO pelo navegador:
  *                           sem o prefixo VITE_, o Vite se recusa a expor a
  *                           variavel ao cliente. Ela nunca entra no bundle.

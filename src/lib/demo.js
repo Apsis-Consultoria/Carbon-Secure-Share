@@ -141,13 +141,76 @@ function esperar(ms = 260) {
 
 /* ===== Operacoes ========================================================== */
 
-export async function demoEntrar() {
-  await esperar(420);
+/**
+ * A sessao ficticia, num lugar so.
+ *
+ * Os dois caminhos de entrada da demonstracao (o botao direto e o fluxo de
+ * codigo) precisam produzir EXATAMENTE a mesma sessao. Duas construcoes
+ * divergiriam, e a divergencia apareceria como um projeto que existe entrando
+ * por um botao e some entrando pelo outro.
+ */
+function sessaoFicticia() {
   return {
     token: tokenFalso(),
     projetos: bd().projetos,
     nome: 'Demo User',
   };
+}
+
+export async function demoEntrar() {
+  await esperar(420);
+  return sessaoFicticia();
+}
+
+/**
+ * Codigo ficticio do fluxo de demonstracao.
+ *
+ * DERIVADO de `digitos`, e nao um literal: a quantidade de digitos e uma
+ * constante do protocolo (DIGITOS_CODIGO em src/lib/api.js) e pode mudar. Com um
+ * literal de 6, o dia em que ela virasse 8 deixaria a demonstracao impossivel de
+ * concluir, e o sintoma seria "codigo invalido" sem causa aparente.
+ *
+ * O numero vem daqui e nao de um sorteio para a revisao ser repetivel, e a tela
+ * o exibe em desenvolvimento. Nao ha segredo nenhum nisto: este modulo inteiro e
+ * removido do bundle publicado, e nao existe verificacao de verdade por tras.
+ */
+function codigoFicticio(digitos) {
+  const seq = '1234567890';
+  let saida = '';
+  while (saida.length < digitos) saida += seq;
+  return saida.slice(0, digitos);
+}
+
+/**
+ * Etapa 1 em demonstracao.
+ *
+ * O atraso ESPELHA o piso de tempo do servidor (PISO_CODIGO_MS, 1500 ms), que
+ * existe para o tempo de resposta nao denunciar se o endereco tem cadastro. Um
+ * atraso curto aqui faria a revisao aprovar uma tela que na producao passa mais
+ * de um segundo parada, que e justamente o estado dificil de acertar.
+ */
+export async function demoPedirCodigo(email, digitos) {
+  await esperar(1500);
+  return { enviado: true, minutos: 10, codigo: codigoFicticio(digitos) };
+}
+
+/**
+ * Etapa 2 em demonstracao. Atraso espelhando PISO_ENTRAR_MS (400 ms).
+ *
+ * O codigo errado precisa FALHAR: sem isso a revisao nunca ve a mensagem de erro
+ * da etapa 2, que e a que mais aparece na vida real. O erro carrega `codigo`
+ * porque e assim que textoDoErro() traduz - mesma forma do erro de demoEnviar().
+ */
+export async function demoEntrarComCodigo(email, codigo, digitos) {
+  await esperar(400);
+
+  if (String(codigo) !== codigoFicticio(digitos)) {
+    const e = new Error('codigo_invalido');
+    e.codigo = 'codigo_invalido';
+    throw e;
+  }
+
+  return sessaoFicticia();
 }
 
 export async function demoListar(projetoId, sub = '') {
@@ -285,9 +348,4 @@ export async function demoEnviar(projetoId, itens, destino = '') {
     falhas: [],
     pasta: destino,
   };
-}
-
-export async function demoTrocarSenha() {
-  await esperar(500);
-  return { trocada: true };
 }

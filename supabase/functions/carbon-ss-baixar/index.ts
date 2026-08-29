@@ -145,7 +145,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
         console.error('Marca d agua falhou na previa:', e);
       }
 
-      return new Response(saida, {
+      // `saida as BodyInit`: `saida` e ArrayBuffer ou Uint8Array, e os dois sao
+      // corpo valido de Response em execucao. O cast existe porque as libs do
+      // Deno 2 tipam Uint8Array como Uint8Array<ArrayBufferLike>, que nao casa
+      // com BodyInit na assinatura, e o `deno check` recusa algo que funciona.
+      // Sem o cast, o typecheck deixa de servir de portao para esta funcao.
+      return new Response(saida as BodyInit, {
         headers: {
           ...base,
           'Content-Type': 'application/pdf',
@@ -172,7 +177,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
         console.error('Marca d agua falhou no PDF:', e);
       }
 
-      return new Response(saida, {
+      // `saida as BodyInit`: `saida` e ArrayBuffer ou Uint8Array, e os dois sao
+      // corpo valido de Response em execucao. O cast existe porque as libs do
+      // Deno 2 tipam Uint8Array como Uint8Array<ArrayBufferLike>, que nao casa
+      // com BodyInit na assinatura, e o `deno check` recusa algo que funciona.
+      // Sem o cast, o typecheck deixa de servir de portao para esta funcao.
+      return new Response(saida as BodyInit, {
         headers: {
           ...base,
           'Content-Type': 'application/pdf',

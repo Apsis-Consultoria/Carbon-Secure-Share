@@ -114,7 +114,7 @@ variável **do processo do Vite**, não do navegador: sem o prefixo `VITE_`, o
 Vite se recusa a expor ao cliente, então é impossível vazar para o bundle.
 
 ```powershell
-$env:SUPABASE_FUNCTIONS_URL="https://<ref>.supabase.co/functions/v1"; npm run dev
+$env:SUPABASE_API_URL="https://<ref>.supabase.co"; npm run dev
 ```
 
 Sem ela, o dev server avisa no boot e `/api/*` cai no `index.html`. A camada de
@@ -133,20 +133,32 @@ Configurados no painel do Supabase (Edge Functions > Secrets) ou por
 | Secret | Para que serve |
 |---|---|
 | `SESSION_SECRET` | assina o token de sessão. Mínimo de 32 caracteres. Trocar invalida todas as sessões abertas. Gerar com `openssl rand -base64 48` |
-| `AZURE_SECURE_SHARE_TENANT_ID` | registro do app **deste** portal no Entra ID |
-| `AZURE_SECURE_SHARE_CLIENT_ID` | idem |
-| `AZURE_SECURE_SHARE_CLIENT_SECRET` | idem |
+| `AZURE_PORTAL_TENANT_ID` | registro do app no Entra ID, compartilhado com o Portal |
+| `AZURE_PORTAL_CLIENT_ID` | idem |
+| `AZURE_PORTAL_CLIENT_SECRET` | idem |
 | `SUPABASE_URL` | injetado pela plataforma |
 | `SUPABASE_SERVICE_ROLE_KEY` | injetado pela plataforma |
 
 O registro do app no Azure precisa das permissões de **aplicativo** (não
-delegadas) `Sites.Selected` e `Mail.Send`, com consentimento de administrador.
-Ver [docs/configurar-azure.md](docs/configurar-azure.md).
+delegadas) `Sites.ReadWrite.All` e `Mail.Send`, com consentimento de
+administrador. Ver [docs/configurar-azure.md](docs/configurar-azure.md).
 
-**São dois registros, um por sistema.** O Portal Apsis Carbon usa
-`AZURE_PORTAL_*` e este portal usa `AZURE_SECURE_SHARE_*`. Os dois rodam no mesmo
-projeto Supabase, onde secret é por projeto: com nomes iguais, um sistema usaria a
-credencial do outro em silêncio.
+**UMA credencial, compartilhada com o Portal Apsis Carbon,** decidido em
+24/08/2026. Este portal le os MESMOS secrets `AZURE_PORTAL_*` que o Portal ja
+usa - nao ha secret proprio, e nao ha nada a criar.
+
+Antes existiam tambem `AZURE_SECURE_SHARE_*`, separados justamente para um
+sistema nao usar a credencial do outro. A separacao deixou de ser real quando os
+dois passaram a apontar para o mesmo registro do Azure, e **dois nomes com o
+mesmo valor sao piores do que um so**: quem olhasse os secrets concluiria que ha
+isolamento e agiria com base nisso, girando um segredo achando que derruba um
+sistema quando derruba os dois.
+
+O registro `[Carbon] Secure Share` continua no Azure, sem uso. Ele tem
+`Mail.Send` concedida e `Sites.Selected`, que sozinha nao da acesso a site
+nenhum: exige autorizacao por site, nunca feita - foi o que produziu o
+`Site do SharePoint nao resolvido: 403`. Para separar de novo, falta conceder
+`Sites.ReadWrite.All` nele e voltar a apontar os secrets.
 
 ## Banco de dados
 

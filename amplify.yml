@@ -41,3 +41,45 @@ customRules:
   - source: /<*>
     target: /index.html
     status: '200'
+
+# TENTATIVA de esconder de qual projeto Supabase as respostas vem.
+#
+# O QUE VAZA HOJE: o gateway do Supabase carimba `sb-project-ref` em TODA
+# resposta, e o rewrite repassa. O ref nao esta no bundle nem na barra de
+# endereco, mas aparece na aba Network do DevTools em qualquer requisicao -
+# medido em 25/08/2026.
+#
+# ISTO PODE NAO FUNCIONAR. `customHeaders` e documentado para o conteudo que o
+# proprio Amplify serve; se ele sobrescreve cabecalho vindo de um rewrite de
+# proxy, a documentacao nao diz. Conferir DEPOIS do deploy, com:
+#
+#   curl.exe -s -D - -o NUL https://<dominio>/api/app-config | Select-String "sb-"
+#
+# Sem saida: funcionou. Ainda mostrando sb-project-ref: nao funcionou, e o
+# lugar certo passa a ser uma Transform Rule de resposta na Cloudflare.
+#
+# NAO REMOVER sb-request-id NEM x-deno-execution-id SEM PENSAR: sao eles que
+# ligam um erro relatado pelo cliente ao log da funcao no painel do Supabase.
+# Escondendo os dois, "me manda o id do erro" deixa de existir como caminho de
+# suporte. Estao aqui porque tambem identificam o Supabase, mas a troca e real.
+#
+# E VALE LEMBRAR O QUE ISTO NAO E: esconder a URL nao e o que protege o sistema.
+# Quem defende as funcoes e a autenticacao dentro delas - ID token do Azure
+# validado contra o JWKS da Microsoft no carbon-api, token de sessao HMAC no
+# Secure Share. Isto aqui e defesa em profundidade: obriga o trafego a passar
+# pelo nosso dominio, onde ha log e limite de taxa.
+customHeaders:
+  - pattern: '/api/<*>'
+    headers:
+      - key: 'sb-project-ref'
+        value: ''
+      - key: 'sb-request-id'
+        value: ''
+      - key: 'sb-gateway-version'
+        value: ''
+      - key: 'x-served-by'
+        value: ''
+      - key: 'x-sb-edge-region'
+        value: ''
+      - key: 'x-deno-execution-id'
+        value: ''
