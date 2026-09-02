@@ -1,0 +1,49 @@
+# =============================================================================
+# Cabecalhos HTTP do Secure Share Carbon, no AWS Amplify Hosting.
+#
+# POR QUE ESTE ARQUIVO NASCEU DEPOIS DE UMA FALHA EM PRODUCAO. Os cabecalhos
+# estavam num bloco `customHeaders` dentro do amplify.yml, e o Amplify NAO os
+# aplicava. Em 02/09/2026, com o dominio de producao no ar, /api/carbon-ss-codigo
+# devolveu 404 e nenhum cabecalho nosso chegou ao navegador.
+#
+# A documentacao da AWS e explicita: cabecalho personalizado vive em
+# `customHttp.yml`, na raiz do projeto, e a AWS recomenda MIGRAR para fora do
+# amplify.yml quem os tinha la.
+# https://docs.aws.amazon.com/amplify/latest/userguide/custom-headers.html
+#
+# REWRITE NAO MORA EM ARQUIVO NENHUM: no Amplify, redirect e rewrite se
+# configuram SO no console. As duas regras necessarias estao no amplify.yml.
+# =============================================================================
+customHeaders:
+  # TENTATIVA de esconder de qual projeto Supabase as respostas vem.
+  #
+  # O QUE VAZA HOJE: o gateway do Supabase carimba `sb-project-ref` em TODA
+  # resposta, e o rewrite repassa. O ref nao esta no bundle nem na barra de
+  # endereco, mas aparece na aba Network do DevTools - medido em 25/08/2026.
+  #
+  # ISTO PODE NAO FUNCIONAR: cabecalho personalizado e documentado para o
+  # conteudo que o proprio Amplify serve; se ele sobrescreve cabecalho vindo de
+  # rewrite de proxy, a documentacao nao diz. Conferir DEPOIS do deploy:
+  #   curl.exe -s -D - -o NUL https://<dominio>/api/carbon-ss-codigo | Select-String "sb-"
+  # Sem saida: funcionou. Ainda mostrando sb-project-ref: o lugar certo passa a
+  # ser uma Transform Rule de resposta na Cloudflare.
+  #
+  # NAO REMOVER sb-request-id NEM x-deno-execution-id SEM PENSAR: sao eles que
+  # ligam um erro relatado pelo cliente ao log da funcao no painel do Supabase.
+  #
+  # E VALE LEMBRAR O QUE ISTO NAO E: esconder a URL nao protege o sistema. Quem
+  # defende as funcoes e a autenticacao dentro delas - token de sessao HMAC.
+  - pattern: '/api/<*>'
+    headers:
+      - key: 'sb-project-ref'
+        value: ''
+      - key: 'sb-request-id'
+        value: ''
+      - key: 'sb-gateway-version'
+        value: ''
+      - key: 'x-served-by'
+        value: ''
+      - key: 'x-sb-edge-region'
+        value: ''
+      - key: 'x-deno-execution-id'
+        value: ''

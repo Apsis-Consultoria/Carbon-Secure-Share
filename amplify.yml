@@ -21,65 +21,43 @@ frontend:
     paths:
       - node_modules/**/*
 
-# A ORDEM IMPORTA. O Amplify avalia as regras de cima para baixo e para na
-# primeira que casar. Se o catch-all da SPA viesse antes, ele engoliria /api/*
-# e devolveria o index.html no lugar da resposta da funcao.
+# =============================================================================
+# ESTE ARQUIVO NAO CONFIGURA REWRITE NEM CABECALHO. Ele so descreve o build.
 #
-# A regra de /api NAO esta aqui: o destino contem o ref do projeto Supabase, e
-# deixa-lo no repositorio significaria versionar qual projeto e o de producao.
-# Ela e configurada no console do Amplify (App settings > Rewrites and
-# redirects), que e onde mora o resto da configuracao de ambiente:
+# Ate 02/09/2026 havia aqui um `customRules` e um `customHeaders`, e o Amplify
+# IGNORAVA os dois em silencio. O custo apareceu no primeiro dia de producao:
+# /api/carbon-ss-codigo devolvia 404 e todo link direto da SPA devolvia 404
+# tambem, porque nem o proxy de /api nem o catch-all existiam de fato.
 #
-#   source  /api/<*>
-#   target  https://<ref>.supabase.co/functions/v1/<*>
-#   type    200 (Rewrite)
+# ONDE CADA COISA MORA:
+#   CABECALHOS -> customHttp.yml, na raiz deste repositorio
+#                 https://docs.aws.amazon.com/amplify/latest/userguide/custom-headers.html
+#   REWRITE    -> SOMENTE no console. Nao existe arquivo para isso
+#                 https://docs.aws.amazon.com/amplify/latest/userguide/redirects.html
 #
-# Sem essa regra, /api/* cai no catch-all abaixo e devolve HTML. A camada de API
-# do frontend detecta isso pelo content-type e mostra mensagem propria em vez de
-# um erro de JSON invalido (ver src/lib/api.js).
-customRules:
-  - source: /<*>
-    target: /index.html
-    status: '200'
-
-# TENTATIVA de esconder de qual projeto Supabase as respostas vem.
+# -----------------------------------------------------------------------------
+# AS DUAS REGRAS NO CONSOLE, App settings > Rewrites and redirects, NESTA ORDEM
+# -----------------------------------------------------------------------------
+#   1)  source  /api/<*>
+#       target  https://<REF>.supabase.co/functions/v1/<*>
+#       type    200 (Rewrite)
 #
-# O QUE VAZA HOJE: o gateway do Supabase carimba `sb-project-ref` em TODA
-# resposta, e o rewrite repassa. O ref nao esta no bundle nem na barra de
-# endereco, mas aparece na aba Network do DevTools em qualquer requisicao -
-# medido em 25/08/2026.
+#   2)  source  /<*>
+#       target  /index.html
+#       type    200 (Rewrite)
 #
-# ISTO PODE NAO FUNCIONAR. `customHeaders` e documentado para o conteudo que o
-# proprio Amplify serve; se ele sobrescreve cabecalho vindo de um rewrite de
-# proxy, a documentacao nao diz. Conferir DEPOIS do deploy, com:
+# A ORDEM IMPORTA: o Amplify para na primeira regra que casa. Com o catch-all em
+# cima, ele engole /api/* e devolve index.html no lugar da resposta da funcao -
+# e src/lib/api.js detecta isso pelo content-type e avisa que falta o rewrite,
+# em vez de estourar um erro de JSON invalido.
 #
-#   curl.exe -s -D - -o NUL https://<dominio>/api/app-config | Select-String "sb-"
+# A SINTAXE DO CURINGA E <*>. Escrever /api/* nao casa com nada: 404.
 #
-# Sem saida: funcionou. Ainda mostrando sb-project-ref: nao funcionou, e o
-# lugar certo passa a ser uma Transform Rule de resposta na Cloudflare.
+# O DESTINO DA REGRA 1 NAO ESTA AQUI de proposito: contem o ref do projeto
+# Supabase, e versionar isso gravaria no repositorio qual projeto e o de
+# producao - o que a arquitetura /api existe para evitar (ver src/lib/endpoint.js).
 #
-# NAO REMOVER sb-request-id NEM x-deno-execution-id SEM PENSAR: sao eles que
-# ligam um erro relatado pelo cliente ao log da funcao no painel do Supabase.
-# Escondendo os dois, "me manda o id do erro" deixa de existir como caminho de
-# suporte. Estao aqui porque tambem identificam o Supabase, mas a troca e real.
-#
-# E VALE LEMBRAR O QUE ISTO NAO E: esconder a URL nao e o que protege o sistema.
-# Quem defende as funcoes e a autenticacao dentro delas - ID token do Azure
-# validado contra o JWKS da Microsoft no carbon-api, token de sessao HMAC no
-# Secure Share. Isto aqui e defesa em profundidade: obriga o trafego a passar
-# pelo nosso dominio, onde ha log e limite de taxa.
-customHeaders:
-  - pattern: '/api/<*>'
-    headers:
-      - key: 'sb-project-ref'
-        value: ''
-      - key: 'sb-request-id'
-        value: ''
-      - key: 'sb-gateway-version'
-        value: ''
-      - key: 'x-served-by'
-        value: ''
-      - key: 'x-sb-edge-region'
-        value: ''
-      - key: 'x-deno-execution-id'
-        value: ''
+# COM CLOUDFLARE NA FRENTE: a regra continua sendo do Amplify. A Cloudflare
+# precisa NAO atrapalhar - /api/* fora do cache (as respostas sao por sessao),
+# Authorization intacto, e SSL/TLS em Full (strict).
+# =============================================================================
