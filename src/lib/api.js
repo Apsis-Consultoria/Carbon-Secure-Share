@@ -1,4 +1,4 @@
-import { caminhoFuncao } from '@/lib/endpoint';
+import { caminhoFuncao, USA_CAMINHO_RELATIVO } from '@/lib/endpoint';
 import {
   MODO_DEMO,
   demoArvore,
@@ -179,11 +179,23 @@ async function chamar(funcao, { metodo = 'GET', corpo = null, consulta = null, c
   if (proxyAusente(resposta, dados)) {
     // Detalhe tecnico no console, nunca na tela: quem le a tela e um cliente,
     // que nao tem como configurar rewrite nenhum.
+    /*
+     * A CAUSA DEPENDE DE COMO O BUILD SAIU, e mandar conferir a coisa errada
+     * custa horas. Com caminho relativo, o suspeito e o rewrite da hospedagem.
+     * Com endereco absoluto no bundle, o rewrite nem participa da chamada: o
+     * suspeito passa a ser a funcao nao publicada ou o endereco errado na
+     * variavel de build.
+     */
     console.error(
-      `[Secure Share] ${caminhoFuncao(funcao)} nao chegou a uma Edge Function ` +
-        `(HTTP ${resposta.status}). Falta o rewrite de /api/* na hospedagem. ` +
-        'Producao: Amplify > App settings > Rewrites and redirects, antes do catch-all da SPA. ' +
-        'Desenvolvimento: defina SUPABASE_API_URL no ambiente do Vite.',
+      USA_CAMINHO_RELATIVO
+        ? `[Secure Share] ${caminhoFuncao(funcao)} nao chegou a uma Edge Function ` +
+            `(HTTP ${resposta.status}). Falta o rewrite de /api/* na hospedagem. ` +
+            'Producao: Amplify > App settings > Rewrites and redirects, antes do catch-all da SPA. ' +
+            'Desenvolvimento: defina SUPABASE_API_URL no ambiente do Vite.'
+        : `[Secure Share] a chamada de ${funcao} nao chegou a uma Edge Function ` +
+            `(HTTP ${resposta.status}). Este build chama o Supabase DIRETO, entao ` +
+            'nao e rewrite: confira se a funcao esta publicada e se SUPABASE_API_URL ' +
+            'do build aponta para o projeto certo.',
     );
     throw new ErroApi('proxy_nao_configurado', { status: resposta.status });
   }

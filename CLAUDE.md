@@ -39,15 +39,40 @@ entrando depois de a equipe ter revogado o acesso.
    inclusive o ZIP. A herança é aplicada no SERVIDOR
    (`_shared/regrasPermissao.ts` e `carbon_secure_share_nivel_item`). No
    frontend seria contornável pedindo o arquivo pelo caminho completo.
-4. **O frontend NÃO TEM VARIÁVEL DE AMBIENTE. NENHUMA.** Não existe `.env`, não
-   existe `import.meta.env` em `src/`, não existe URL de Supabase nem anon key
-   no bundle. Tudo vai para o caminho relativo `/api/<funcao>`, e quem sabe o
-   endereço é a hospedagem, por rewrite (ver `src/lib/endpoint.js`).
+4. **O frontend não tem `import.meta.env` nem `.env`.** Nenhuma anon key, em
+   nenhuma hipótese. Tudo vai por `caminhoFuncao()` de `src/lib/endpoint.js`.
 
-   Com a URL no bundle, qualquer pessoa que abrisse a tela de login descobriria
-   o endereço do projeto e passaria a bater direto nas Edge Functions, fora do
-   nosso domínio, sem log, WAF nem limite de taxa. Não reintroduza `VITE_*`
-   aqui: se algo precisa de configuração, ela vive no backend ou na hospedagem.
+   **O destino é decidido no BUILD, e desde 02/09/2026 tem dois modos.**
+   `vite.config.js` injeta `__BASE_API__` pelo `define`:
+
+   | `SUPABASE_API_URL` no build | `__BASE_API__` | Depende de rewrite? | Endereço no bundle? |
+   |---|---|---|---|
+   | ausente (e sempre em dev) | `/api` | sim | não |
+   | presente | `https://<ref>.supabase.co/functions/v1` | não | **sim** |
+
+   O modo relativo é o DESENHO PREFERIDO: com a URL no bundle, qualquer pessoa
+   que abra a tela de login descobre o endereço e passa a bater direto nas Edge
+   Functions, fora do nosso domínio, sem log, WAF nem limite de taxa. Quem
+   autoriza é o token de sessão assinado com `SESSION_SECRET`, conferido dentro
+   de cada função, então conhecer o endereço não dá acesso: o que se perdeu é
+   defesa em profundidade, não a fechadura.
+
+   **Por que o segundo modo existe.** Em 02/09/2026
+   `secureshare.apsiscarbon.com` subiu sem a regra de rewrite, que só se
+   configura no console do Amplify. O POST do login levava 301 para
+   `/api/carbon-ss-codigo/`, o navegador seguia virando GET, perdia o corpo e
+   recebia 404. Nenhuma mudança de código alcançava isso com caminho relativo.
+
+   **COMO VOLTAR AO MODO PREFERIDO:** quando a regra de rewrite existir, apague a
+   variável `SUPABASE_API_URL` do ambiente de build da Amplify. O próximo build
+   volta para `/api`. Não há código para mexer, e o valor não está escrito em
+   lugar nenhum do repositório.
+
+   Não reintroduza `VITE_*`: sem o prefixo, o Vite se recusa a expor a variável
+   por conta própria, e quem decide se ela entra no bundle é o `define`, num
+   único lugar auditável. Também não existe cliente supabase-js aqui, de
+   propósito: ele só criaria a tentação de consultar uma tabela direto e pular a
+   checagem de permissão.
 
    Também não existe cliente supabase-js neste bundle, de propósito: ele só
    criaria a tentação de consultar uma tabela direto e pular a checagem de
