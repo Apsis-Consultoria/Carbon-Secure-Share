@@ -7,6 +7,17 @@ import App from '@/App';
 import { ProvedorIdioma } from '@/lib/i18n';
 import '@/index.css';
 
+/**
+ * Subcaminho em que o site e servido, injetado pelo `define` do vite.config.js.
+ *
+ * O `typeof` NAO E PARANOIA: sem ele, um servidor de desenvolvimento que subiu
+ * ANTES desta constante existir serve o modulo com o identificador cru, o
+ * navegador levanta ReferenceError e a tela fica BRANCA, sem nada na interface
+ * dizendo o motivo. Aconteceu no portal em 02/09/2026.
+ */
+const BASE_ROTAS = typeof __BASE_ROTAS__ === 'string' ? __BASE_ROTAS__ : '/';
+
+
 /* =====================================================================
    Blindagem contra extensoes que mutam o DOM (dom-guard)
 
@@ -70,7 +81,7 @@ createRoot(document.getElementById('root')).render(
         nenhuma <Route> - e a tela fica vazia sem erro no console. A constante e
         injetada pelo `define` do vite.config.js.
       */}
-      <BrowserRouter basename={__BASE_ROTAS__}>
+      <BrowserRouter basename={BASE_ROTAS}>
         <App />
         <Toaster position="top-right" richColors closeButton />
       </BrowserRouter>
