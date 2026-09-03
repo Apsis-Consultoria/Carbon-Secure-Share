@@ -44,17 +44,21 @@ customHeaders:
   #
   # E VALE LEMBRAR O QUE ISTO NAO E: esconder a URL nao protege o sistema. Quem
   # defende as funcoes e a autenticacao dentro delas - token de sessao HMAC.
+  # -------------------------------------------------------------------------
+  # VALOR VAZIO QUEBRA O BUILD INTEIRO. Este bloco tinha `value: ''` em seis
+  # cabecalhos, e a Amplify recusa:
+  #
+  #     [ERROR] !!!Unable to save headers: CustomerError: Invalid custom
+  #             header config file, header must have value
+  #
+  # O passo de cabecalhos roda ANTES do deploy, entao o build morria ali e NADA
+  # era publicado, de 02/09/2026 (quando este arquivo nasceu) ate 03/09/2026.
+  # Este arquivo participa do deploy: erro nele nao degrada, derruba.
+  #
+  # A saida e SOBRESCREVER com valor neutro em vez de apagar. E so o
+  # `sb-project-ref` e mascarado: `sb-request-id` e `x-deno-execution-id` sao o
+  # que liga um erro relatado por quem usa ao log da funcao no Supabase.
   - pattern: '/api/*'
     headers:
       - key: 'sb-project-ref'
-        value: ''
-      - key: 'sb-request-id'
-        value: ''
-      - key: 'sb-gateway-version'
-        value: ''
-      - key: 'x-served-by'
-        value: ''
-      - key: 'x-sb-edge-region'
-        value: ''
-      - key: 'x-deno-execution-id'
-        value: ''
+        value: 'oculto'
