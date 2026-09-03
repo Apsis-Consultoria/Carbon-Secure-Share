@@ -76,7 +76,52 @@ if (!DESTINO_FUNCOES && process.env.NODE_ENV !== 'production') {
   );
 }
 
-export default defineConfig({
+/**
+ * Base das chamadas de API, injetada no bundle em tempo de BUILD.
+ *
+ * -----------------------------------------------------------------------------
+ * ISTO AFROUXA UMA DECISAO DE SEGURANCA, e o afrouxamento e CONDICIONAL
+ * -----------------------------------------------------------------------------
+ * O desenho original e: o frontend so conhece o caminho relativo /api/<funcao>,
+ * e quem sabe o endereco do Supabase e a hospedagem, por rewrite. Assim o
+ * endereco do projeto nunca entra no bundle, e a unica porta publica e o nosso
+ * dominio - com log, WAF e limite de taxa na frente.
+ *
+ * Em 02/09/2026 secureshare.apsiscarbon.com subiu SEM a regra de rewrite, e a
+ * Amplify servia /api/<funcao> como arquivo estatico: 301 para /api/<funcao>/ e
+ * depois 404. O POST do login virava GET no redirecionamento, perdia o corpo, e
+ * o console mostrava exatamente isso. A regra e de console e nao existe arquivo
+ * de repositorio que a substitua.
+ *
+ * A SAIDA, e o custo dela: com SUPABASE_API_URL no ambiente do BUILD, o endereco
+ * absoluto entra no bundle e o navegador chama o Supabase direto. O custo e o
+ * que o desenho evitava: quem abrir o codigo-fonte da pagina ve o endereco. O
+ * que NAO muda: quem autoriza e o token de sessao assinado com SESSION_SECRET,
+ * conferido dentro de cada funcao, entao conhecer o endereco nao da acesso.
+ *
+ * ELA SE DESFAZ SOZINHA: no dia em que a regra de rewrite existir, apague a
+ * variavel SUPABASE_API_URL do ambiente de build da Amplify. O proximo build
+ * volta a `/api` e o endereco sai do bundle, sem tocar em uma linha de codigo.
+ *
+ * EM DESENVOLVIMENTO CONTINUA `/api`, sempre: ali o proxy resolve.
+ */
+function baseDaApi(comando) {
+  if (comando !== 'build') return '/api';
+  if (!DESTINO_FUNCOES) return '/api';
+  // DESTINO_FUNCOES e SO a origem do projeto: `lerEnderecoDoProjeto` corta o
+  // /functions/v1 do fim, de proposito, para a variavel carregar so o que muda
+  // de ambiente. O caminho e convencao do Supabase e mora em CAMINHO_FUNCOES.
+  return DESTINO_FUNCOES + CAMINHO_FUNCOES;
+}
+
+export default defineConfig(({ command }) => ({
+  /*
+   * Vai para src/lib/endpoint.js. Precisa de JSON.stringify: `define` faz
+   * substituicao TEXTUAL, entao sem as aspas sairia um identificador solto.
+   */
+  define: {
+    __BASE_API__: JSON.stringify(baseDaApi(command)),
+  },
   plugins: [react()],
   resolve: {
     alias: { '@': path.resolve(process.cwd(), './src') },
@@ -99,4 +144,4 @@ export default defineConfig({
         }
       : undefined,
   },
-});
+}));

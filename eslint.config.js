@@ -24,7 +24,17 @@ export default [
   {
     files: ['src/**/*.{js,mjs,cjs,jsx}'],
     languageOptions: {
-      globals: globals.browser,
+      globals: {
+        ...globals.browser,
+        /*
+         * Constante injetada em tempo de build pelo `define` do vite.config.js e
+         * lida por src/lib/endpoint.js. O Rollup a substitui pelo literal antes
+         * de o codigo existir, entao nao e variavel de ambiente do navegador.
+         * Sem esta linha o no-undef acusa, e desligar a regra no arquivo
+         * esconderia erro de digitacao de verdade.
+         */
+        __BASE_API__: 'readonly',
+      },
       parserOptions: {
         ecmaVersion: 2022,
         sourceType: 'module',

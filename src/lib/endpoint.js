@@ -36,8 +36,41 @@
  * dentro de cada funcao. Logo nao ha por que mandar apikey nenhuma.
  */
 
-/** Prefixo servido pelo rewrite. Relativo de proposito: nunca absoluto. */
-const PREFIXO = '/api';
+/**
+ * Prefixo das chamadas. `/api` (relativo) quando houver rewrite na hospedagem,
+ * e o endereco absoluto do Supabase quando NAO houver.
+ *
+ * `__BASE_API__` e injetada pelo `define` do vite.config.js e vale:
+ *   '/api'  em desenvolvimento SEMPRE, e em producao quando SUPABASE_API_URL
+ *           nao esta no ambiente do build;
+ *   'https://<ref>.supabase.co/functions/v1'  em producao quando esta.
+ *
+ * POR QUE EXISTE. Em 02/09/2026 secureshare.apsiscarbon.com subiu sem a regra de
+ * rewrite de /api, que so se configura no console do Amplify. O POST do login
+ * levava 301 para /api/carbon-ss-codigo/, o navegador seguia virando GET, perdia
+ * o corpo e recebia 404. Nenhuma mudanca de codigo alcancava o problema enquanto
+ * o caminho fosse relativo.
+ *
+ * O CUSTO, por inteiro: com o endereco no bundle, quem abrir o codigo-fonte da
+ * pagina descobre o projeto Supabase e pode chamar as Edge Functions fora do
+ * nosso dominio, sem log, WAF nem limite de taxa - exatamente o que o desenho
+ * relativo evitava, e o texto acima ainda descreve. O que NAO muda: quem
+ * autoriza e o token de sessao assinado com SESSION_SECRET, conferido dentro de
+ * cada funcao, entao conhecer o endereco nao da acesso a nada.
+ *
+ * COMO DESFAZER: apague SUPABASE_API_URL do ambiente de BUILD da Amplify. O
+ * proximo build volta para '/api'. Nao ha codigo para mexer, e e por isso que o
+ * valor nao esta escrito aqui.
+ *
+ * O `typeof` protege quem importar este modulo fora do build do Vite.
+ */
+const PREFIXO = typeof __BASE_API__ === 'string' && __BASE_API__ ? __BASE_API__ : '/api';
+
+/**
+ * Verdadeiro quando as chamadas saem pelo caminho relativo. O aviso de rewrite
+ * faltando em src/lib/api.js so faz sentido nesse caso.
+ */
+export const USA_CAMINHO_RELATIVO = PREFIXO === '/api';
 
 /** Caminho de uma funcao: caminhoFuncao('carbon-ss-login') -> '/api/carbon-ss-login'. */
 export function caminhoFuncao(nome) {
