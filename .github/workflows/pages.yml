@@ -1,0 +1,114 @@
+# =============================================================================
+# Publica o Secure Share no GitHub Pages, para demonstracao.
+#
+# POR QUE ISTO EXISTE. A hospedagem de producao e o AWS Amplify, em
+# secureshare.apsiscarbon.com. Em 02/09/2026 a Amplify parou de publicar (o
+# arquivo servido era de 29/08) e faltava a regra de rewrite de /api. Isto e um
+# caminho alternativo para alguem abrir as telas enquanto aquilo nao se resolve.
+# Nao substitui a producao e nao deve virar a hospedagem oficial.
+#
+# -----------------------------------------------------------------------------
+# O SITE E PUBLICO NA INTERNET. Aqui isso pesa MAIS do que no portal interno
+# -----------------------------------------------------------------------------
+# Pages de repositorio privado em plano que nao seja Enterprise Cloud publica o
+# site para qualquer pessoa com o endereco. E este sistema e o portal do
+# CLIENTE, cuja entrada e por codigo enviado ao e-mail - sem Azure no caminho.
+# Consequencias, ditas por inteiro:
+#
+#   - o ENDERECO DO PROJETO SUPABASE fica publico (este build usa o modo
+#     absoluto de __BASE_API__; ver src/lib/endpoint.js e a regra 4 do
+#     CLAUDE.md);
+#   - a TELA DE PEDIR CODIGO fica publica, e qualquer pessoa pode digitar um
+#     e-mail e disparar um envio. Quem segura isso e o freio do servidor: 5
+#     palpites por codigo, ate 3 codigos vivos por endereco e teto de 20 pedidos
+#     por dia (ver DIGITOS_CODIGO em src/lib/api.js). O codigo so chega na caixa
+#     do proprio titular, entao ninguem entra na conta de outro;
+#   - NENHUM ARQUIVO fica publico: todo byte passa por carbon-ss-baixar com a
+#     permissao conferida na requisicao, e o projeto vem do TOKEN, nunca do
+#     parametro (regras 1 e 2 do CLAUDE.md).
+#
+# MESMO ASSIM, e uma superficie nova exposta na internet. Despublique quando a
+# demonstracao terminar: Settings > Pages > Unpublish site.
+# =============================================================================
+name: Pages (demonstracao)
+
+on:
+  # Sem `push`, de proposito: publicar em cada commit deixaria um site PUBLICO
+  # sempre alinhado ao trabalho em andamento. Quem decide quando publicar e uma
+  # pessoa.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.publicacao.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Confere que o ref do projeto existe
+        # FALHA CEDO, COM MENSAGEM. Sem o secret o build cairia no modo relativo
+        # (`/api`), e o site publicaria bonito e sem funcionar: no Pages nao
+        # existe rewrite nenhum, entao toda chamada devolveria 404.
+        run: |
+          if [ -z "${{ secrets.SUPABASE_PROJECT_REF }}" ]; then
+            echo "::error::secrets.SUPABASE_PROJECT_REF nao esta definido. Sem ele o bundle sai chamando /api, que no Pages nao existe."
+            exit 1
+          fi
+
+      - name: Build
+        env:
+          BASE_PUBLICA: /${{ github.event.repository.name }}/
+          SUPABASE_API_URL: https://${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co
+        run: npm run build
+
+      - name: 404.html para link direto da SPA
+        # O Pages nao tem rewrite: um link direto nao existe como arquivo e
+        # cairia no 404 do GitHub. Servindo o index.html como pagina de 404, o
+        # React Router assume a rota, com o basename que ja esta no bundle.
+        run: cp dist/index.html dist/404.html
+
+      - name: Confere que o bundle saiu no modo absoluto
+        run: |
+          if ! grep -rqE 'https://[a-z]{20}\.supabase\.co/functions/v1' dist/assets/*.js; then
+            echo "::error::o bundle nao tem o endereco absoluto das Edge Functions. No Pages ele e obrigatorio."
+            exit 1
+          fi
+          echo "ok: bundle no modo absoluto"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: publicacao
+        uses: actions/deploy-pages@v4
+
+      - name: Onde ficou
+        run: |
+          echo "### Secure Share publicado" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.publicacao.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "A entrada por codigo no e-mail FUNCIONA nesta URL." >> $GITHUB_STEP_SUMMARY
+          echo "Despublique quando a demonstracao terminar:" >> $GITHUB_STEP_SUMMARY
+          echo "Settings > Pages > Unpublish site." >> $GITHUB_STEP_SUMMARY

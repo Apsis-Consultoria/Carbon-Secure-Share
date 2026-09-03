@@ -114,13 +114,33 @@ function baseDaApi(comando) {
   return DESTINO_FUNCOES + CAMINHO_FUNCOES;
 }
 
+/**
+ * Subcaminho em que o site e servido. Vazio (raiz) em todo lugar, menos no
+ * GitHub Pages de repositorio de projeto, que serve em
+ * `https://<org>.github.io/<repo>/`.
+ *
+ * SEM ISTO O PAGES SERVE TELA BRANCA: o index.html pediria /assets/index-xxxx.js
+ * na RAIZ do dominio, onde nao existe nada, e o console mostraria 404 de js sem
+ * pista de que a causa e o subcaminho.
+ *
+ * Alimentada por BASE_PUBLICA no build (ver .github/workflows/pages.yml).
+ */
+const basePublica = (process.env.BASE_PUBLICA || '/').replace(/\/*$/, '/');
+
 export default defineConfig(({ command }) => ({
+  base: basePublica,
   /*
    * Vai para src/lib/endpoint.js. Precisa de JSON.stringify: `define` faz
    * substituicao TEXTUAL, entao sem as aspas sairia um identificador solto.
    */
   define: {
     __BASE_API__: JSON.stringify(baseDaApi(command)),
+    /*
+     * Vai para o basename do BrowserRouter em src/main.jsx. Nao usamos
+     * `import.meta.env.BASE_URL` para manter a regra 4: `src/` nao le
+     * import.meta.env, e existe UM lugar onde se audita o que entra no bundle.
+     */
+    __BASE_ROTAS__: JSON.stringify(basePublica.replace(/\/$/, '') || '/'),
   },
   plugins: [react()],
   resolve: {

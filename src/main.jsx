@@ -63,7 +63,14 @@ if (typeof Node === 'function' && Node.prototype) {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ProvedorIdioma>
-      <BrowserRouter>
+      {/*
+        basename: no dominio proprio vale '/' e nada muda. No GitHub Pages de
+        repositorio de projeto o site e servido em /<repo>/, e sem o basename o
+        Router acha que a rota atual e "/Carbon-Secure-Share/" - que nao casa com
+        nenhuma <Route> - e a tela fica vazia sem erro no console. A constante e
+        injetada pelo `define` do vite.config.js.
+      */}
+      <BrowserRouter basename={__BASE_ROTAS__}>
         <App />
         <Toaster position="top-right" richColors closeButton />
       </BrowserRouter>

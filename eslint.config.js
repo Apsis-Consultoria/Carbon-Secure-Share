@@ -34,6 +34,8 @@ export default [
          * esconderia erro de digitacao de verdade.
          */
         __BASE_API__: 'readonly',
+        // Subcaminho do site, para o basename do React Router. Mesmo motivo.
+        __BASE_ROTAS__: 'readonly',
       },
       parserOptions: {
         ecmaVersion: 2022,
