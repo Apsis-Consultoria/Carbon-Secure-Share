@@ -14,6 +14,17 @@
 # REWRITE NAO MORA EM ARQUIVO NENHUM: no Amplify, redirect e rewrite se
 # configuram SO no console. As duas regras necessarias estao no amplify.yml.
 # =============================================================================
+# -----------------------------------------------------------------------------
+# A SINTAXE DE `pattern` AQUI E GLOB, e NAO a do rewrite
+# -----------------------------------------------------------------------------
+# Este arquivo nasceu em 02/09/2026 com `pattern: '/<*>'`, copiado da regra de
+# rewrite. Estava errado: `<*>` e sintaxe de redirect e rewrite, que se
+# configuram no console. Para cabecalho a AWS documenta GLOB, com exemplos
+# `'*.json'`, `'/path/*'` e `'**/*'`:
+# https://docs.aws.amazon.com/amplify/latest/userguide/custom-header-YAML-format.html
+#
+# O erro nao apareceu porque a Amplify parou de publicar em 29/08/2026. Ele
+# apareceria como cabecalho de seguranca ausente na resposta.
 customHeaders:
   # TENTATIVA de esconder de qual projeto Supabase as respostas vem.
   #
@@ -33,7 +44,7 @@ customHeaders:
   #
   # E VALE LEMBRAR O QUE ISTO NAO E: esconder a URL nao protege o sistema. Quem
   # defende as funcoes e a autenticacao dentro delas - token de sessao HMAC.
-  - pattern: '/api/<*>'
+  - pattern: '/api/*'
     headers:
       - key: 'sb-project-ref'
         value: ''
